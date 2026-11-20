@@ -587,12 +587,12 @@ function renderPw() {
   nextBtn.style.display = 'inline-flex';
 
   if (pwStep === 0) {
-    // one question: your LinkedIn profile URL
+    // one question: your LinkedIn URL — or just your name, and Exa search finds the profile
     body.innerHTML = `
-      <label>Your LinkedIn profile URL</label>
-      <input type="text" id="pw_linkedin_url" value="${(pwDraft.linkedin_url || '').replace(/"/g, '&quot;')}" placeholder="https://www.linkedin.com/in/you" autofocus
+      <label>Your LinkedIn profile URL — or just your name</label>
+      <input type="text" id="pw_linkedin_url" value="${(pwDraft.linkedin_url || '').replace(/"/g, '&quot;')}" placeholder="https://www.linkedin.com/in/you  ·  or e.g. Nasri Nasir" autofocus
              onkeydown="if(event.key==='Enter'){event.preventDefault();pwAdvance()}">
-      <div style="font-size:12px;color:var(--muted);margin-top:8px">We pull your public profile instantly — nothing is shared, nothing is posted.</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">We pull your public profile instantly via Exa search — nothing is shared, nothing is posted.</div>
       <div style="margin-top:14px"><a href="javascript:void(0)" style="font-size:12.5px;color:var(--muted);text-decoration:underline" onclick="pwManual()">No LinkedIn? Set up manually instead</a></div>`;
     nextBtn.textContent = 'Pull my profile →';
     const first = body.querySelector('input'); if (first) first.focus();
@@ -605,7 +605,9 @@ function renderPw() {
     <div id="pwPullBox" style="background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:14px">
       ${pwDraft.linkedin_url
         ? `<div id="pwLinkStatus" style="font-size:13px;color:var(--muted)">${hasCard ? '✓ Pulled from your public LinkedIn profile' : 'Pulling your public profile…'}</div>`
-        : '<div style="font-size:13px;color:var(--muted)">Manual setup — your typed details below are all the agent knows.</div>'}
+        : (pwDraft.method === 'linkedin' && pwDraft.name
+            ? `<div id="pwLinkStatus" style="font-size:13px;color:var(--muted)">${hasCard ? '✓ Found and pulled via Exa search' : 'Searching for your LinkedIn profile via Exa…'}</div>`
+            : '<div style="font-size:13px;color:var(--muted)">Manual setup — your typed details below are all the agent knows.</div>')}
     </div>
     <label>Your name</label>
     <input type="text" id="pw_name" value="${(pwDraft.name || '').replace(/"/g, '&quot;')}" placeholder="e.g. Nasri Nasir">
@@ -616,7 +618,7 @@ function renderPw() {
     <label style="margin-top:10px">Looking for…</label>
     <input type="text" id="pw_looking" value="${(pwDraft.looking || '').replace(/"/g, '&quot;')}" placeholder="People and opportunities you want">`;
   nextBtn.textContent = 'Finish setup ✓';
-  if (pwDraft.linkedin_url && !hasCard) pullOwnProfile();
+  if (pwDraft.method === 'linkedin' && (pwDraft.linkedin_url || pwDraft.name) && !hasCard) pullOwnProfile();
   const first = body.querySelector('input'); if (first) first.focus();
 }
 
@@ -632,8 +634,8 @@ async function pullOwnProfile() {
   const status = $('pwLinkStatus');
   if (!status) return;
   const url = pwDraft.linkedin_url || '';
-  if (!url || !/linkedin\.com/i.test(url)) { status.textContent = 'No LinkedIn URL captured — go back and add it, or fill the fields below.'; return; }
-  status.innerHTML = '<span class="spin" style="display:inline-block;width:13px;height:13px;border:2px solid rgba(108,140,255,.25);border-top-color:var(--accent);border-radius:50%;animation:rot 1s linear infinite;vertical-align:-2px"></span> &nbsp;Pulling your public profile…';
+  if (!url && !pwDraft.name) { status.textContent = 'Go back and add your LinkedIn URL or name — or fill the fields below.'; return; }
+  status.innerHTML = '<span class="spin" style="display:inline-block;width:13px;height:13px;border:2px solid rgba(108,140,255,.25);border-top-color:var(--accent);border-radius:50%;animation:rot 1s linear infinite;vertical-align:-2px"></span> &nbsp;' + (url ? 'Pulling your public profile…' : 'Searching for your LinkedIn profile via Exa…');
   // capture any typed name first
   const nameEl = $('pw_name');
   const nameVal = nameEl ? nameEl.value.trim() : '';
@@ -641,11 +643,12 @@ async function pullOwnProfile() {
   try {
     const job = await api('/api/profilecard', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ linkedin_url: url.trim(), name: pwDraft.name || null })
+      body: JSON.stringify({ linkedin_url: url || null, name: pwDraft.name || null })
     });
     if (job.card) {
       // Exa returned the card synchronously — instant, no polling
       pwDraft.linkedin_card = { ...job.card };
+      if (job.linkedin_url) pwDraft.linkedin_url = job.linkedin_url;
       applyPullToReview(status, job.card);
       return;
     }
@@ -677,10 +680,10 @@ function applyPullToReview(status, card) {
 
 async function pwAdvance() {
   if (pwStep === 0) {
-    const url = ($('pw_linkedin_url') || {}).value || '';
-    if (!url.trim() || !/linkedin\.com/i.test(url)) { toast('Paste your LinkedIn profile URL — or set up manually'); return; }
-    pwDraft.linkedin_url = url.trim();
-    pwDraft.method = 'linkedin';
+    const v = (($('pw_linkedin_url') || {}).value || '').trim();
+    if (!v) { toast('Paste your LinkedIn URL — or type your name'); return; }
+    if (/linkedin\.com/i.test(v)) { pwDraft.linkedin_url = v; pwDraft.method = 'linkedin'; }
+    else { pwDraft.name = v; pwDraft.linkedin_url = ''; pwDraft.method = 'linkedin'; } // name only — Exa search finds the profile
     pwStep = 1;
     renderPw();
     return;

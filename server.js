@@ -171,6 +171,23 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ---- Exa.ai direct: ask for a structured JSON overview of the person, grounded on their LinkedIn URL ----
+    async function exaSearchLinkedIn(name) {
+      // find someone's LinkedIn profile URL by name via Exa search
+      const s = await getSettings();
+      if (!s.exa_key) return { error: 'no exa key configured' };
+      try {
+        const r = await fetch('https://api.exa.ai/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': s.exa_key },
+          body: JSON.stringify({ query: `${name} LinkedIn profile`, numResults: 3, includeSites: ['linkedin.com'] })
+        });
+        if (!r.ok) return { error: `exa search failed (${r.status})` };
+        const d = await r.json();
+        const hit = (d.results || []).find(x => /linkedin\.com\/in\//i.test(x.url || ''));
+        if (!hit) return { error: 'exa found no LinkedIn profile for that name' };
+        return { url: hit.url.split('?')[0], title: hit.title || null };
+      } catch (e) { return { error: 'exa search failed: ' + e.message }; }
+    }
     async function exaProfileCard(linkedinUrl, name) {
       const s = await getSettings();
       if (!s.exa_key) return { error: 'no exa key configured' };
@@ -215,21 +232,33 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/profilecard' && req.method === 'POST') {
       const { linkedin_url, name } = await readBody(req);
-      if (!linkedin_url || !/linkedin\.com/i.test(linkedin_url)) return json(res, 400, { error: 'a linkedin.com URL is required' });
-      // Exa first — instant JSON that builds the profile card; agent queue as fallback
+      const url = (linkedin_url && /linkedin\.com/i.test(linkedin_url)) ? linkedin_url.trim() : null;
+      if (!url && !name) return json(res, 400, { error: 'a linkedin.com URL or a name is required' });
+      // Exa first — instant JSON that builds the profile card; agent queue as fallback.
+      // No URL? Exa search finds their LinkedIn profile by name, then pulls the card.
       const s = await getSettings();
       if (s.exa_key) {
-        const result = await exaProfileCard(linkedin_url, name || null);
+        let resolved = url;
+        if (!resolved) {
+          const found = await exaSearchLinkedIn(name);
+          if (!found.url) {
+            const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url: null, name, note: 'exa search: ' + found.error } });
+            return json(res, 201, { id: rows[0].id, status: 'queued', error: found.error, mode: 'agent-fallback' });
+          }
+          resolved = found.url;
+        }
+        const result = await exaProfileCard(resolved, name || null);
         if (result.card) {
           const card = { ...result.card, source: 'exa: exa.ai/answer' };
-          const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url, name: name || card.name || null, status: 'done', card } });
-          return json(res, 201, { id: rows[0].id, status: 'done', card, mode: 'exa' });
+          const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url: resolved, name: name || card.name || null, status: 'done', card } });
+          return json(res, 201, { id: rows[0].id, status: 'done', card, mode: 'exa', linkedin_url: resolved });
         }
         // Exa failed — fall through to the agent queue so nothing silently breaks
-        const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url, name: name || null, note: 'exa: ' + (result.error || 'no card') } });
+        const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url: resolved, name: name || null, note: 'exa: ' + (result.error || 'no card') } });
         return json(res, 201, { id: rows[0].id, status: 'queued', error: result.error, mode: 'agent-fallback' });
       }
-      const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url, name: name || null } });
+      if (!url) return json(res, 400, { error: 'a linkedin.com URL is required (name-only lookup needs an Exa key)' });
+      const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url: url, name: name || null } });
       return json(res, 201, { id: rows[0].id, status: rows[0].status, mode: 'agent' });
     }
     const pc = p.match(/^\/api\/profilecard\/([0-9a-f-]{36})$/i);
