@@ -250,7 +250,7 @@
 
 <div class="rail" id="rail" style="display:none">
   <button data-s="0">⌂ Welcome</button>
-  <button data-s="1">1 · Start a conversation</button>
+  <button data-s="1">1 · Capture profile</button>
   <button data-s="2">2 · Assessment</button>
   <button data-s="3">3 · Insight deck</button>
   <button data-s="4">4 · Continue the journey</button>
@@ -266,13 +266,13 @@
     <p class="tagline">Every great first conversation becomes a relationship record — with context, a shareable insight and a clear next step. Nothing feels automated. Nothing gets forgotten.</p>
     <div class="quote">"…and your relationships shouldn't feel automated."</div>
     <div class="cta">
-      <button class="btn primary" onclick="startDemo()">Start a relationship →</button>
-      <button class="btn ghost" onclick="loadAndShow()">View my relationships</button>
+      <button class="btn primary" onclick="startDemo()">Capture profile →</button>
+      <button class="btn ghost" onclick="loadAndShow()">View my contacts</button>
     </div>
   </div>
 
   <div class="journey stagger">
-    <div class="jstep" onclick="go(1)"><div class="num">1</div><b>Start a conversation</b><span>Met someone? Add them and drop a quick note or transcript.</span></div>
+    <div class="jstep" onclick="go(1)"><div class="num">1</div><b>Capture profile</b><span>Met someone? Pull their LinkedIn or add them by hand — takes seconds.</span></div>
     <div class="jstep" onclick="go(2)"><div class="num">2</div><b>Assessment</b><span>The agent researches them and scores the fit — you decide: pursue, consider, or reject.</span></div>
     <div class="jstep" onclick="go(3)"><div class="num">3</div><b>Insight deck</b><span>A professional PDF intro to the relationship — why connect, opportunities, your value.'ll see. Private stays private.</span></div>
     <div class="jstep" onclick="go(4)"><div class="num">4</div><b>Continue the journey</b><span>Follow-up drafts, recorded responses, and the next action — always moving.</span></div>
@@ -294,7 +294,7 @@
   <div class="panel glassy" style="max-width:640px; margin:0 auto; display:flex; flex-direction:column; min-height:72vh">
     <div style="text-align:center; padding:6px 0 14px; border-bottom:1px solid var(--line)">
       <div class="kv" id="gDots" style="justify-content:center; margin-bottom:6px"></div>
-      <b id="gStage" style="font-size:14px">Capturing a relationship</b>
+      <b id="gStage" style="font-size:14px">Capturing a profile</b>
     </div>
 
     <div style="flex:1; display:flex; flex-direction:column; justify-content:center; padding:30px 4px 18px">
@@ -370,7 +370,7 @@
   <div style="max-width:420px; margin:22vh auto; text-align:center; padding:0 24px">
     <div class="brand" style="justify-content:center; margin-bottom:26px"><div class="dotmark">◆</div> Relate</div>
     <div class="spinner"></div>
-    <h2 id="loadTitle" style="margin:18px 0 6px; font-size:19px">Saving relationship</h2>
+    <h2 id="loadTitle" style="margin:18px 0 6px; font-size:19px">Saving profile</h2>
     <div id="loadSub" role="status" aria-live="polite" style="font-size:13.5px; color:var(--muted); margin-bottom:18px">Waiting for the save response.</div>
     <div class="proc-line" id="pl1"></div>
     <div class="proc-line" id="pl2"></div>
@@ -1349,7 +1349,7 @@ async function reopenDecision() {
 }
 
 async function decide(decision) {
-  if (!REL) { toast('Capture a relationship first'); return; }
+  if (!REL) { toast('Capture a profile first'); return; }
   const btn = [...document.querySelectorAll('#decisionRow button')].find(b => b.textContent.includes(decision === 'Pursue' ? 'pursuing' : decision));
   if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
   const a = { ...(REL.assessment || {}), decision, decided_at: new Date().toISOString() };
@@ -1640,7 +1640,7 @@ async function saveConversation() {
   $('loadScreen').style.display = 'block';
   $('loadScreen').querySelector('.spinner').style.display = 'block';
   $('loadActions').style.display = 'none';
-  $('loadTitle').textContent = 'Saving relationship';
+  $('loadTitle').textContent = 'Saving profile';
   $('loadSub').textContent = 'Saving the relationship and profile card.';
   try {
     REL = await api('/api/relationships', {
@@ -1665,7 +1665,7 @@ async function saveConversation() {
           body: JSON.stringify({ author: PROFILE?.name || 'You', text: 'Voice note from the first conversation', audio: recB64 })
         });
       } catch (e) {
-        toast('Relationship saved, but the audio attachment could not be confirmed.');
+        toast('Profile saved, but the audio attachment could not be confirmed.');
       }
       recB64 = null;
       const ui = recUI(); ui.audio.style.display = 'none'; ui.state.textContent = '';
@@ -1674,7 +1674,7 @@ async function saveConversation() {
     $('cName').textContent = REL.name.split(' ')[0];
     $('dName').textContent = REL.name.split(' ')[0];
     $('bSub').textContent = `From conversation · ${REL.met_context}. Check and correct anything before it informs next steps.`;
-    $('loadTitle').textContent = 'Relationship saved';
+    $('loadTitle').textContent = 'Profile saved';
     $('loadActions').style.display = 'flex';
     $('loadSub').textContent = PROFCARD
       ? 'Profile card pulled via Apify and stored with the relationship. Research is optional — run it from the assessment screen any time.'
@@ -1719,7 +1719,7 @@ async function saveCard() { go(4); }
 async function addInteraction() {
   const text = $('fNext').value.trim();
   if (!text && !recB64) { toast('Add a comment or record a voice note first'); return; }
-  if (!REL) { toast('Start a relationship first'); return; }
+  if (!REL) { toast('Capture a profile first'); return; }
   const payload = { author: PROFILE?.name || 'You' };
   if (text) payload.text = text;
   if (recB64) { payload.audio = recB64; payload.duration = 0; }
