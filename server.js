@@ -513,6 +513,160 @@ function acceptDeck(id){
       return res.end(html);
     }
 
+    // ---- Talk Track: a pre-planned conversation agenda — topics + discovery questions, generated instantly via Exa ----
+    if (p === '/api/talk' && req.method === 'GET') {
+      const rows = await sb('GET', 'talk_jobs', { query: { select: 'id,relationship_id,name,status,picked_topic,responded_at,created_at', order: 'created_at.desc', limit: '50' } });
+      return json(res, 200, rows);
+    }
+    if (p === '/api/talk' && req.method === 'POST') {
+      const { relationship_id, name, context } = await readBody(req);
+      if (!name) return json(res, 400, { error: 'name required' });
+      const s = await getSettings();
+      if (!s.exa_key) return json(res, 400, { error: 'an Exa key is required — add it in Settings for instant talk tracks' });
+      const ctx = context || {};
+      const theirCard = ctx.profile_card || {};
+      const you = ctx.user_profile || {};
+      const grounding = `Their profile: ${JSON.stringify({ headline: theirCard.headline, role: theirCard.role, about: theirCard.about, company: theirCard.company, research: theirCard.research })}
+Sender: ${JSON.stringify({ name: you.name, role: you.role, offer: you.offer, looking: you.looking })}
+Conversation so far: ${(ctx.note || '').slice(0, 400)} ${ctx.met_context || ''}
+What the sender wants: ${(ctx.contact && ctx.contact.want) || ''}`;
+      try {
+        const r = await fetch('https://api.exa.ai/answer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': s.exa_key },
+          body: JSON.stringify({
+            query: `Plan a conversation agenda for ${you.name || 'the sender'} and ${name}: 3 topics worth digging into, each with open discovery questions about ${name}'s world.`,
+            systemPrompt: `${grounding}\nUse only the provided data. Questions must be open-ended and about THEM, not the sender. "why" is one sentence on why the topic matters to them. "bring" is one short thing the sender can offer on this topic, or empty. No fluff, no invented facts.`,
+            model: 'exa-fast',
+            outputSchema: {
+              type: 'object',
+              properties: {
+                topics: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      topic: { type: 'string' },
+                      why: { type: 'string' },
+                      questions: { type: 'array', items: { type: 'string' } },
+                      bring: { type: 'string' }
+                    },
+                    required: ['topic', 'why', 'questions']
+                  }
+                }
+              },
+              required: ['topics']
+            }
+          })
+        });
+        if (!r.ok) return json(res, 502, { error: 'exa answer failed: ' + (await r.text()).slice(0, 150) });
+        const d = await r.json();
+        let a = d.answer;
+        if (typeof a === 'string') { const m = a.match(/\{[\s\S]*\}/); a = m ? JSON.parse(m[0]) : null; }
+        const topics = (a && Array.isArray(a.topics)) ? a.topics.slice(0, 4) : null;
+        if (!topics || !topics.length) return json(res, 502, { error: 'exa returned no talk track' });
+        const track = { role: theirCard.headline || theirCard.role || '', topics };
+        const rows = await sb('POST', 'talk_jobs', { body: { relationship_id: relationship_id || null, name, status: 'done', track } });
+        return json(res, 201, { id: rows[0].id, status: 'done', mode: 'exa' });
+      } catch (e) { return json(res, 500, { error: 'talk track generation failed: ' + e.message }); }
+    }
+    const tk = p.match(/^\/api\/talk\/([0-9a-f-]{36})(\/pick)?$/i);
+    if (tk) {
+      const id = tk[1];
+      if (req.method === 'GET') {
+        const rows = await sb('GET', 'talk_jobs', { query: { id: `eq.${id}`, select: 'id,relationship_id,name,status,track,picked_topic,responded_at' } });
+        return json(res, 200, rows[0] || { error: 'not found' });
+      }
+      if (req.method === 'PATCH' && tk[2] === '/pick') {
+        // the recipient marks which topic to start with — no auth, the link is the consent
+        const { picked_topic } = await readBody(req);
+        const rows = await sb('PATCH', 'talk_jobs', { query: { id: `eq.${id}` }, body: { picked_topic: typeof picked_topic === 'number' ? picked_topic : null, responded_at: new Date().toISOString() } });
+        return json(res, 200, rows[0]);
+      }
+    }
+    // public talk track page: /talk/:id
+    const tsh = p.match(/^\/talk\/([0-9a-f-]{36})$/i);
+    if (tsh && req.method === 'GET') {
+      const id = tsh[1];
+      const rows = await sb('GET', 'talk_jobs', { query: { id: `eq.${id}`, select: 'name,status,track,picked_topic,responded_at,relationship_id' } });
+      const row = rows[0];
+      const esc = s2 => String(s2 ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+      if (!row || !row.track) {
+        res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end('<h2 style="font-family:sans-serif">Talk track not found.</h2>');
+      }
+      const prof = await sb('GET', 'profiles', { query: { id: 'eq.me', select: 'name,role,linkedin_card,photo' } }).catch(() => []);
+      const from = prof[0] || {};
+      let theirPhoto = null;
+      if (row.relationship_id) {
+        const rels = await sb('GET', 'relationships', { query: { id: `eq.${row.relationship_id}`, select: 'profile_card' } }).catch(() => []);
+        theirPhoto = (rels[0] && rels[0].profile_card && rels[0].profile_card.photo) || null;
+      }
+      const fromPhoto = (from.photo) || (from.linkedin_card && from.linkedin_card.photo) || null;
+      const theirImg = theirPhoto ? `<img src="${esc(theirPhoto)}" alt="" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:2px solid #2c3550;margin-bottom:10px" onerror="this.remove()">` : '';
+      const fromImg = (fromPhoto && from.name) ? `<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:10px"><img src="${esc(fromPhoto)}" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover" onerror="this.remove()"><span style="color:#8b95a7;font-size:12.5px">prepared by ${esc(from.name)}</span></div>` : '';
+      const topics = row.track.topics || [];
+      const topicsHtml = topics.map((t, i) => `
+        <div class="topic ${row.picked_topic === i ? 'picked' : ''}">
+          <div class="thead">
+            <b>${esc(t.topic)}</b>
+            ${row.picked_topic === null
+              ? `<button class="pick" onclick="pick(${i})">Start here</button>`
+              : (row.picked_topic === i ? '<span class="picked-tag">✓ Let\'s start here</span>' : '')}
+          </div>
+          <div class="why">${esc(t.why || '')}</div>
+          <ul>${(t.questions || []).map(q => `<li>${esc(q)}</li>`).join('')}</ul>
+          ${t.bring ? `<div class="bring">I can bring: ${esc(t.bring)}</div>` : ''}
+        </div>`).join('');
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Talk Track — ${esc(row.name)}</title>
+<style>
+:root{--bg:#0b0e14;--panel:#141a28;--line:#232b3d;--ink:#e8ecf4;--muted:#8b95a7;--accent:#7c94ff}
+*{box-sizing:border-box} body{background:var(--bg);color:var(--ink);font-family:system-ui,"Segoe UI",sans-serif;margin:0;padding:40px 20px;line-height:1.6}
+.wrap{max-width:680px;margin:auto}
+.card{background:var(--panel);border:1px solid transparent;border-radius:18px;padding:36px 38px;background:linear-gradient(#11151f,#11151f) padding-box,linear-gradient(135deg,#6c8cff,#8f6cff) border-box}
+.cover{text-align:center;padding:26px 0 10px}
+.cover h1{font-size:26px;margin:0 0 4px}
+.cover .role{color:var(--muted);font-size:14px}
+.cover .sub{color:var(--accent);font-size:13px;letter-spacing:1.5px;text-transform:uppercase;margin-top:14px}
+.topic{border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-top:16px}
+.topic.picked{border-color:rgba(110,231,160,.5);background:rgba(74,222,128,.05)}
+.thead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.thead b{font-size:16.5px}
+.why{color:var(--muted);font-size:13px;margin-top:4px}
+ul{padding-left:20px;margin:10px 0 0} li{margin:10px 0;font-size:15px;color:#ccd5e4}
+.bring{margin-top:10px;font-size:13.5px;color:var(--accent)}
+.pick{background:transparent;border:1px solid var(--line);color:var(--accent);border-radius:999px;padding:6px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;font-weight:600}
+.pick:hover{border-color:var(--accent)}
+.picked-tag{color:#6ee7a0;font-size:12.5px;font-weight:600}
+.foot{margin-top:34px;font-size:12px;color:var(--muted);border-top:1px dashed var(--line);padding-top:16px;text-align:center}
+</style></head><body><div class="wrap">
+<div class="card">
+  <div class="cover">
+    ${theirImg}
+    <h1>${esc(row.name)}</h1>
+    <div class="role">${esc(row.track.role || '')}</div>
+    <div class="sub">Talk track — for our next conversation</div>
+    ${from.name ? `<div style="color:var(--muted);font-size:12.5px;margin-top:6px">prepared by ${esc(from.name)}${from.role ? ' · ' + esc(from.role) : ''}</div>` : ''}
+    ${fromImg}
+  </div>
+  <div style="font-size:14px;color:#ccd5e4;margin-top:18px">A few topics worth digging into, and the questions I'd love to ask. Mark where you'd like to start — we'll take it from there.</div>
+  ${topicsHtml}
+  <div class="foot">Shared deliberately — this page is the talk track only. Private notes stay private.</div>
+</div></div>
+<script>
+function pick(i){
+  fetch('/api/talk/${id}/pick', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ picked_topic: i }) })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(() => location.reload())
+    .catch(() => alert('Could not record your pick — please try again.'));
+}
+</script>
+</body></html>`;
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(html);
+    }
+
     // ---- research jobs (queued for the QwenWork agent to run real web searches) ----
     if (p === '/api/research' && req.method === 'GET') {
       const rows = await sb('GET', 'research_jobs', {
