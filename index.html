@@ -391,8 +391,9 @@
       <span class="dotline"><span class="pdt"></span> insight card</span>
       <span class="dotline"><span class="pdt"></span> follow-up</span>
     </div>
-    <h1><span id="bName">—</span> — assessment <span class="tag private">PRIVATE UNTIL YOU DECIDE</span></h1>
-    <p class="sub" id="bSub">The agent researched their background and scored the fit. You make the call.</p>
+    <div id="profileHead"></div>
+    <h1>Assessment <span class="tag private">PRIVATE UNTIL YOU DECIDE</span></h1>
+    <p class="sub" id="bSub">Optional and separate — the profile card above is what got saved.</p>
     <div id="contactStrip" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
 
     <div id="deckStrip" style="display:none"></div>
@@ -1015,7 +1016,31 @@ async function renderDeckStrip() {
 
 function renderCard() { renderDeck(); }
 
+// simple profile card at the top of the relationship screen: photo, name, what they do
+function renderProfileHead() {
+  const box = $('profileHead');
+  if (!REL) { box.innerHTML = ''; return; }
+  const pc = REL.profile_card || {};
+  const role = pc.headline || pc.role || (REL.contact && REL.contact.role) || '';
+  const photo = pc.photo || '';
+  const initials = (REL.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  box.innerHTML = `
+    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      ${photo
+        ? `<img src="${photo}" alt="" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:2px solid var(--line)">`
+        : `<div style="width:84px;height:84px;border-radius:50%;background:var(--bg2);border:2px solid var(--line);display:grid;place-items:center;font-size:24px;color:var(--muted)">${initials}</div>`}
+      <div style="flex:1;min-width:220px">
+        <div style="font-size:22px;font-weight:700">${REL.name || '—'}</div>
+        ${role ? `<div style="font-size:14px;margin-top:4px;line-height:1.45">${role}</div>` : ''}
+        ${pc.location ? `<div style="font-size:12.5px;color:var(--muted);margin-top:4px">📍 ${pc.location}</div>` : ''}
+        ${pc.company ? `<div style="font-size:12.5px;color:var(--muted);margin-top:2px">🏢 ${pc.company}</div>` : ''}
+      </div>
+    </div>
+    ${pc.about ? `<div style="font-size:13px;color:#ccd5e4;line-height:1.55;margin-bottom:16px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:12px 16px">${String(pc.about).slice(0, 280)}${String(pc.about).length > 280 ? '…' : ''}</div>` : ''}`;
+}
+
 function renderContact() {
+  renderProfileHead();
   const strip = $('contactStrip');
   const c = REL?.contact || {};
   const chips = [
@@ -1674,7 +1699,6 @@ async function saveConversation() {
       recB64 = null;
       const ui = recUI(); ui.audio.style.display = 'none'; ui.state.textContent = '';
     }
-    $('bName').textContent = REL.name;
     $('cName').textContent = REL.name.split(' ')[0];
     $('dName').textContent = REL.name.split(' ')[0];
     $('bSub').textContent = `From conversation · ${REL.met_context}. Check and correct anything before it informs next steps.`;
@@ -1797,7 +1821,6 @@ async function loadAndShow() {
           ${dk && dk.status === 'done' ? '<a href="/deck/' + dk.id + '" target="_blank" style="margin-top:auto;align-self:flex-start;font-size:12px;color:var(--accent);text-decoration:none;font-weight:600;border:1px solid rgba(108,140,255,.35);background:var(--accent-soft);border-radius:999px;padding:5px 12px">View insight deck ↗</a>' : ''}`;
         el.onclick = () => {
           REL = r;
-          $('bName').textContent = r.name;
           $('cName').textContent = r.name.split(' ')[0];
           $('dName').textContent = r.name.split(' ')[0];
           $('bSub').textContent = `From conversation · ${r.met_context || ''}. Check and correct anything before it informs next steps.`;
