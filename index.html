@@ -223,17 +223,7 @@
         <input id="exaKey" type="password" placeholder="exa_api_…" style="flex:1; background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; color:#e8ecf4; font-size:14px">
         <button class="btn ghost small" onclick="testExa(false)">Test</button>
       </div>
-      <p style="font-size:12px;color:var(--muted);margin-top:6px">Fast LinkedIn profile pulls via exa.ai (tried before Apify).</p>
-    </div>
-
-    <div style="margin:18px 0">
-      <label style="font-size:13px;font-weight:600">Apify API token</label>
-      <p style="font-size:12px;color:var(--muted);margin:4px 0 8px" id="apifyStatus"></p>
-      <div style="display:flex;gap:8px">
-        <input id="apifyToken" type="password" placeholder="apify_api_…" style="flex:1; background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; color:#e8ecf4; font-size:14px">
-        <button class="btn ghost small" onclick="testApify(false)">Test</button>
-      </div>
-      <p style="font-size:12px;color:var(--muted);margin-top:6px">Powers instant LinkedIn profile pulls (harvestapi/linkedin-profile-scraper, $4/1k profiles).</p>
+      <p style="font-size:12px;color:var(--muted);margin-top:6px">Instant LinkedIn profile pulls via exa.ai — returns the profile JSON that builds the card.</p>
     </div>
 
     <div style="margin:18px 0">
@@ -539,37 +529,17 @@ function closeProfile() { $('profileModal').style.display = 'none'; }
 // ---- settings: integration keys stored server-side, submitted over HTTPS ----
 async function openSettings() {
   $('settingsModal').style.display = 'block';
-  $('apifyToken').value = ''; $('aiKey').value = ''; $('exaKey').value = '';
+  $('aiKey').value = ''; $('exaKey').value = '';
   try {
     const s = await api('/api/settings');
     $('exaStatus').textContent = s.exa_key?.set
       ? `Stored (••••${s.exa_key.last4}) — profile pulls run instantly via Exa`
-      : 'Not set — Exa is skipped, Apify or the agent is used instead';
-    $('apifyStatus').textContent = s.apify_token?.set
-      ? `Stored (••••${s.apify_token.last4}) — LinkedIn pulls run instantly via Apify`
       : 'Not set — profile pulls queue for the QwenWork agent instead';
     $('aiStatus').textContent = s.ai_key?.set
       ? `${s.ai_provider || 'AI'} key stored (••••${s.ai_key.last4})`
       : 'Not set — assessments are drafted when research is processed';
     $('aiProvider').value = s.ai_provider || '';
-  } catch (e) { $('apifyStatus').textContent = 'Could not load settings'; }
-}
-
-async function testApify(save) {
-  const token = $('apifyToken').value.trim();
-  $('apifyStatus').textContent = 'Testing token against Apify…';
-  try {
-    const r = await api('/api/settings/test-apify', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(token ? { apify_token: token } : {})
-    });
-    if (r.ok) {
-      $('apifyStatus').textContent = `Connected as ${r.username}${r.plan ? ' (' + r.plan + ' plan)' : ''}`;
-      if (save) saveSettings();
-    } else {
-      $('apifyStatus').textContent = `Failed: ${r.error || 'invalid token'}`;
-    }
-  } catch (e) { $('apifyStatus').textContent = 'Test request failed'; }
+  } catch (e) { $('exaStatus').textContent = 'Could not load settings'; }
 }
 
 async function testExa(save) {
@@ -592,14 +562,13 @@ async function testExa(save) {
 async function saveSettings() {
   const body = {};
   const exa = $('exaKey').value.trim(); if (exa) body.exa_key = exa;
-  const tok = $('apifyToken').value.trim(); if (tok) body.apify_token = tok;
   const prov = $('aiProvider').value; if (prov !== '') body.ai_provider = prov;
   const key = $('aiKey').value.trim(); if (key) body.ai_key = key;
   if (!Object.keys(body).length) { toast('Nothing to save — enter a value to change it'); return; }
   try {
     await api('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     toast('Settings saved — stored server-side');
-    $('apifyToken').value = ''; $('aiKey').value = '';
+    $('aiKey').value = ''; $('exaKey').value = '';
     openSettings();
   } catch (e) { toast('Could not save settings'); }
 }
@@ -674,7 +643,8 @@ async function pullOwnProfile() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ linkedin_url: url.trim(), name: pwDraft.name || null })
     });
-    if (job.card && (job.mode === 'exa' || job.mode === 'apify')) {
+    if (job.card) {
+      // Exa returned the card synchronously — instant, no polling
       pwDraft.linkedin_card = { ...job.card };
       applyPullToReview(status, job.card);
       return;
@@ -1267,11 +1237,11 @@ async function pullProfile() {
       body: JSON.stringify({ linkedin_url: url, name: $('fName').value.trim() || null })
     });
     profJobId = job.id;
-    if (job.card && (job.mode === 'exa' || job.mode === 'apify')) {
-      // provider returned the card synchronously — instant, no polling
+    if (job.card && job.mode === 'exa') {
+      // Exa pulled it synchronously — instant card, no polling
       PROFCARD = { ...job.card, source_url: url };
       applyProfileCard(PROFCARD);
-      $('profileCardSrc').textContent = `pulled via ${job.mode === 'exa' ? 'Exa (exa.ai)' : 'Apify (harvestapi/linkedin-profile-scraper)'} — verify before saving`;
+      $('profileCardSrc').textContent = 'pulled via Exa (exa.ai) — verify before saving';
       return;
     }
     if (job.mode === 'agent-fallback') {
@@ -1697,7 +1667,7 @@ async function saveConversation() {
     $('loadTitle').textContent = 'Profile saved';
     $('loadActions').style.display = 'flex';
     $('loadSub').textContent = PROFCARD
-      ? 'Profile card pulled via Apify and stored with the relationship. Research is optional — run it from the assessment screen any time.'
+      ? 'Profile card pulled via Exa and stored with the relationship. Research is optional — run it from the assessment screen any time.'
       : 'Relationship stored. Research is optional — run it from the assessment screen any time.';
     renderResearch();
     renderTimeline();
