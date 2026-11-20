@@ -196,16 +196,27 @@ const server = http.createServer(async (req, res) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': s.exa_key },
           body: JSON.stringify({
-            query: `Give me a JSON object (no prose, no markdown) with keys: name, headline, role, location, about, company. Describe the person named ${name || 'on this profile'} briefly (about: max 2 sentences). Base it only on their LinkedIn profile.`,
-            text: [{ value: linkedinUrl }]
+            query: `Build a profile summary for the person at this LinkedIn profile URL: ${linkedinUrl}${name ? ` (their name is ${name})` : ''}.`,
+            systemPrompt: 'Use the given LinkedIn profile URL as the primary source. Only include facts found on that profile; keep "about" to max 2 sentences. Leave a field empty if not found.',
+            model: 'exa-fast',
+            outputSchema: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' }, headline: { type: 'string' }, role: { type: 'string' },
+                location: { type: 'string' }, about: { type: 'string' }, company: { type: 'string' }
+              },
+              required: ['name'],
+              additionalProperties: false
+            }
           })
         });
         if (!r.ok) return { error: `exa answer failed (${r.status}): ${(await r.text()).slice(0, 200)}` };
         const d = await r.json();
-        const answer = d.answer || d.text || '';
-        const m = String(answer).match(/\{[\s\S]*\}/);
-        if (!m) return { error: 'exa returned no JSON' };
-        const c = JSON.parse(m[0]);
+        // profile photo: Exa citations can carry an image (often the profile's og:image)
+        const photo = (d.citations || []).map(c => c.image).find(u => u && /^https?:\/\//.test(u)) || null;
+        let c = d.answer;
+        if (typeof c === 'string') { const m = c.match(/\{[\s\S]*\}/); c = m ? JSON.parse(m[0]) : null; }
+        if (!c || typeof c !== 'object') return { error: 'exa returned no structured answer' };
         const pick = k => (typeof c[k] === 'string' && c[k].trim()) ? c[k].trim() : null;
         const card = {
           name: pick('name') || name || null,
@@ -214,7 +225,7 @@ const server = http.createServer(async (req, res) => {
           location: pick('location'),
           about: pick('about'),
           company: pick('company'),
-          photo: null,
+          photo,
           url: linkedinUrl,
           raw: c
         };
