@@ -131,9 +131,9 @@ const server = http.createServer(async (req, res) => {
       return json(res, 201, rows[0]);
     }
 
-    // ---- settings (Apify / AI keys stored server-side, never returned in full) ----
+    // ---- settings (Exa / Apify / AI keys stored server-side, never returned in full) ----
     async function getSettings() {
-      const rows = await sb('GET', 'settings', { query: { id: 'eq.me', select: 'apify_token,ai_provider,ai_key' } });
+      const rows = await sb('GET', 'settings', { query: { id: 'eq.me', select: 'exa_key,apify_token,ai_provider,ai_key' } });
       return rows[0] || {};
     }
     function mask(token) {
@@ -142,17 +142,33 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/settings' && req.method === 'GET') {
       const s = await getSettings();
-      return json(res, 200, { apify_token: mask(s.apify_token), ai_provider: s.ai_provider || null, ai_key: mask(s.ai_key) });
+      return json(res, 200, { exa_key: mask(s.exa_key), apify_token: mask(s.apify_token), ai_provider: s.ai_provider || null, ai_key: mask(s.ai_key) });
     }
     if (p === '/api/settings' && req.method === 'PUT') {
-      const { apify_token, ai_provider, ai_key } = await readBody(req);
+      const { exa_key, apify_token, ai_provider, ai_key } = await readBody(req);
       const body = { updated_at: new Date().toISOString() };
+      if (typeof exa_key === 'string') body.exa_key = exa_key || null;
       if (typeof apify_token === 'string') body.apify_token = apify_token || null;
       if (typeof ai_provider === 'string') body.ai_provider = ai_provider || null;
       if (typeof ai_key === 'string') body.ai_key = ai_key || null;
       await sb('PATCH', 'settings', { query: { id: 'eq.me' }, body });
       const s = await getSettings();
-      return json(res, 200, { apify_token: mask(s.apify_token), ai_provider: s.ai_provider || null, ai_key: mask(s.ai_key) });
+      return json(res, 200, { exa_key: mask(s.exa_key), apify_token: mask(s.apify_token), ai_provider: s.ai_provider || null, ai_key: mask(s.ai_key) });
+    }
+    // verify an Exa key without storing it
+    if (p === '/api/settings/test-exa' && req.method === 'POST') {
+      const { exa_key } = await readBody(req);
+      const key = exa_key || (await getSettings()).exa_key;
+      if (!key) return json(res, 400, { ok: false, error: 'no key provided or stored' });
+      try {
+        const r = await fetch('https://api.exa.ai/search', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': key },
+          body: JSON.stringify({ query: 'LinkedIn', numResults: 1 })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) return json(res, 200, { ok: false, error: `Exa responded ${r.status}: ${(d.detail || r.statusText || '').slice ? String(d.detail || r.statusText).slice(0, 120) : ''}` });
+        return json(res, 200, { ok: true });
+      } catch (e) { return json(res, 200, { ok: false, error: e.message }); }
     }
     // verify a token against Apify without storing it
     if (p === '/api/settings/test-apify' && req.method === 'POST') {
@@ -167,6 +183,42 @@ const server = http.createServer(async (req, res) => {
       } catch (e) {
         return json(res, 200, { ok: false, error: e.message });
       }
+    }
+
+    // ---- Exa.ai direct: ask for a structured JSON overview of the person, grounded on their LinkedIn URL ----
+    async function exaProfileCard(linkedinUrl, name) {
+      const s = await getSettings();
+      if (!s.exa_key) return { error: 'no exa key configured' };
+      try {
+        const r = await fetch('https://api.exa.ai/answer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': s.exa_key },
+          body: JSON.stringify({
+            query: `Give me a JSON object (no prose, no markdown) with keys: name, headline, role, location, about, company. Describe the person named ${name || 'on this profile'} briefly (about: max 2 sentences). Base it only on their LinkedIn profile.`,
+            text: [{ value: linkedinUrl }]
+          })
+        });
+        if (!r.ok) return { error: `exa answer failed (${r.status}): ${(await r.text()).slice(0, 200)}` };
+        const d = await r.json();
+        const answer = d.answer || d.text || '';
+        const m = String(answer).match(/\{[\s\S]*\}/);
+        if (!m) return { error: 'exa returned no JSON' };
+        const c = JSON.parse(m[0]);
+        const pick = k => (typeof c[k] === 'string' && c[k].trim()) ? c[k].trim() : null;
+        const card = {
+          name: pick('name') || name || null,
+          headline: pick('headline'),
+          role: pick('role') || pick('headline'),
+          location: pick('location'),
+          about: pick('about'),
+          company: pick('company'),
+          photo: null,
+          url: linkedinUrl,
+          raw: c
+        };
+        if (!card.name) return { error: 'exa card has no name' };
+        return { card };
+      } catch (e) { return { error: 'exa request failed: ' + e.message }; }
     }
 
     // ---- Apify direct: run harvestapi/linkedin-profile-scraper and return a profile card ----
@@ -215,8 +267,18 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/profilecard' && req.method === 'POST') {
       const { linkedin_url, name } = await readBody(req);
       if (!linkedin_url || !/linkedin\.com/i.test(linkedin_url)) return json(res, 400, { error: 'a linkedin.com URL is required' });
-      // if Apify is configured, scrape directly — no queue, no agent handoff
+      // provider chain, each instant (no queue): Exa first, then Apify, agent queue last
       const s = await getSettings();
+      const providerErrors = [];
+      if (s.exa_key) {
+        const result = await exaProfileCard(linkedin_url, name || null);
+        if (result.card) {
+          const card = { ...result.card, source: 'exa: exa.ai/answer' };
+          const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url, name: name || card.name || null, status: 'done', card } });
+          return json(res, 201, { id: rows[0].id, status: 'done', card, mode: 'exa' });
+        }
+        providerErrors.push('exa: ' + (result.error || 'no card'));
+      }
       if (s.apify_token) {
         const result = await apifyProfileCard(linkedin_url);
         if (result.card) {
@@ -224,12 +286,11 @@ const server = http.createServer(async (req, res) => {
           const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url, name: name || card.name || null, status: 'done', card } });
           return json(res, 201, { id: rows[0].id, status: 'done', card, mode: 'apify' });
         }
-        // Apify failed — fall through to the agent queue so nothing silently breaks
-        const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url, name: name || null, note: result.error } });
-        return json(res, 201, { id: rows[0].id, status: 'queued', error: result.error, mode: 'agent-fallback' });
+        providerErrors.push('apify: ' + (result.error || 'no card'));
       }
-      const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url, name: name || null } });
-      return json(res, 201, { id: rows[0].id, status: rows[0].status, mode: 'agent' });
+      // every provider failed or none configured — fall through to the agent queue so nothing silently breaks
+      const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url, name: name || null, note: providerErrors.join(' | ') || null } });
+      return json(res, 201, { id: rows[0].id, status: 'queued', error: providerErrors.join(' | ') || null, mode: providerErrors.length ? 'agent-fallback' : 'agent' });
     }
     const pc = p.match(/^\/api\/profilecard\/([0-9a-f-]{36})$/i);
     if (pc) {

@@ -217,6 +217,16 @@
     <p class="sub">Keys are submitted over HTTPS and stored server-side — they never appear in the page source or chat.</p>
 
     <div style="margin:18px 0">
+      <label style="font-size:13px;font-weight:600">Exa API key</label>
+      <p style="font-size:12px;color:var(--muted);margin:4px 0 8px" id="exaStatus"></p>
+      <div style="display:flex;gap:8px">
+        <input id="exaKey" type="password" placeholder="exa_api_…" style="flex:1; background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; color:#e8ecf4; font-size:14px">
+        <button class="btn ghost small" onclick="testExa(false)">Test</button>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-top:6px">Fast LinkedIn profile pulls via exa.ai (tried before Apify).</p>
+    </div>
+
+    <div style="margin:18px 0">
       <label style="font-size:13px;font-weight:600">Apify API token</label>
       <p style="font-size:12px;color:var(--muted);margin:4px 0 8px" id="apifyStatus"></p>
       <div style="display:flex;gap:8px">
@@ -529,9 +539,12 @@ function closeProfile() { $('profileModal').style.display = 'none'; }
 // ---- settings: integration keys stored server-side, submitted over HTTPS ----
 async function openSettings() {
   $('settingsModal').style.display = 'block';
-  $('apifyToken').value = ''; $('aiKey').value = '';
+  $('apifyToken').value = ''; $('aiKey').value = ''; $('exaKey').value = '';
   try {
     const s = await api('/api/settings');
+    $('exaStatus').textContent = s.exa_key?.set
+      ? `Stored (••••${s.exa_key.last4}) — profile pulls run instantly via Exa`
+      : 'Not set — Exa is skipped, Apify or the agent is used instead';
     $('apifyStatus').textContent = s.apify_token?.set
       ? `Stored (••••${s.apify_token.last4}) — LinkedIn pulls run instantly via Apify`
       : 'Not set — profile pulls queue for the QwenWork agent instead';
@@ -559,8 +572,26 @@ async function testApify(save) {
   } catch (e) { $('apifyStatus').textContent = 'Test request failed'; }
 }
 
+async function testExa(save) {
+  const key = $('exaKey').value.trim();
+  $('exaStatus').textContent = 'Testing key against Exa…';
+  try {
+    const r = await api('/api/settings/test-exa', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(key ? { exa_key: key } : {})
+    });
+    if (r.ok) {
+      $('exaStatus').textContent = 'Key works ✓';
+      if (save) saveSettings();
+    } else {
+      $('exaStatus').textContent = `Failed: ${r.error || 'invalid key'}`;
+    }
+  } catch (e) { $('exaStatus').textContent = 'Test request failed'; }
+}
+
 async function saveSettings() {
   const body = {};
+  const exa = $('exaKey').value.trim(); if (exa) body.exa_key = exa;
   const tok = $('apifyToken').value.trim(); if (tok) body.apify_token = tok;
   const prov = $('aiProvider').value; if (prov !== '') body.ai_provider = prov;
   const key = $('aiKey').value.trim(); if (key) body.ai_key = key;
@@ -643,12 +674,12 @@ async function pullOwnProfile() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ linkedin_url: url.trim(), name: pwDraft.name || null })
     });
-    if (job.mode === 'apify' && job.card) {
+    if (job.card && (job.mode === 'exa' || job.mode === 'apify')) {
       pwDraft.linkedin_card = { ...job.card };
       applyPullToReview(status, job.card);
       return;
     }
-    status.textContent = job.error ? 'Apify failed — the QwenWork agent is reading it instead…' : 'The QwenWork agent is reading your profile…';
+    status.textContent = job.error ? 'Providers failed — the QwenWork agent is reading it instead…' : 'The QwenWork agent is reading your profile…';
     const poll = setInterval(async () => {
       try {
         const j = await api('/api/profilecard/' + job.id);
@@ -1248,19 +1279,19 @@ async function pullProfile() {
       body: JSON.stringify({ linkedin_url: url, name: $('fName').value.trim() || null })
     });
     profJobId = job.id;
-    if (job.mode === 'apify' && job.card) {
-      // Apify scraped it synchronously — instant card, no polling
+    if (job.card && (job.mode === 'exa' || job.mode === 'apify')) {
+      // provider returned the card synchronously — instant, no polling
       PROFCARD = { ...job.card, source_url: url };
       applyProfileCard(PROFCARD);
-      $('profileCardSrc').textContent = 'scraped via Apify (harvestapi/linkedin-profile-scraper) — verify before saving';
+      $('profileCardSrc').textContent = `pulled via ${job.mode === 'exa' ? 'Exa (exa.ai)' : 'Apify (harvestapi/linkedin-profile-scraper)'} — verify before saving`;
       return;
     }
     if (job.mode === 'agent-fallback') {
-      $('profileCardSrc').textContent = '⚠ Apify failed — queued for the QwenWork agent instead: ' + (job.error || '');
+      $('profileCardSrc').textContent = '⚠ providers failed — queued for the QwenWork agent instead: ' + (job.error || '');
     } else {
       $('profileCardSrc').textContent = '⏳ the QwenWork agent is reading their public LinkedIn profile…';
     }
-    toast(job.mode === 'agent-fallback' ? 'Apify pull failed — agent fallback queued' : 'Profile pull queued — the agent reads their public page');
+    toast(job.mode === 'agent-fallback' ? 'Provider pulls failed — agent fallback queued' : 'Profile pull queued — the agent reads their public page');
     if (profPoll) clearInterval(profPoll);
     profPoll = setInterval(async () => {
       try {
