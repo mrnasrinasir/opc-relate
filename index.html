@@ -1781,6 +1781,7 @@ async function saveConversation() {
           headers: {'Content-Type':'application/json'},
           body: JSON.stringify({ author: PROFILE?.name || 'You', text: 'Voice note from the first conversation', audio: recB64 })
         });
+        queueTranscription(REL, REL.interactions.length - 1); // agent transcribes it
       } catch (e) {
         toast('Profile saved, but the audio attachment could not be confirmed.');
       }
@@ -1792,8 +1793,8 @@ async function saveConversation() {
      $('loadTitle').textContent = 'Profile saved';
     $('loadActions').style.display = 'flex';
     $('loadSub').textContent = PROFCARD
-      ? 'Profile card pulled via Exa and stored with the relationship. Research is optional — run it from the assessment screen any time.'
-      : 'Relationship stored. Research is optional — run it from the assessment screen any time.';
+      ? 'Profile card pulled via Exa and stored. Voice notes, if any, go to the QwenWork agent for transcription.'
+      : 'Profile stored. Voice notes, if any, go to the QwenWork agent for transcription.';
     renderResearch();
     renderTimeline();
     renderContact();
@@ -1843,10 +1844,47 @@ async function addInteraction() {
     body: JSON.stringify(payload)
   });
   $('fNext').value = '';
+  if (recB64) queueTranscription(REL, REL.interactions.length - 1); // agent transcribes the voice note
   recB64 = null;
   const ui = recUI('tl'); ui.audio.style.display = 'none'; ui.state.textContent = '';
   renderTimeline();
   toast('Recorded in the app — the relationship grows');
+}
+
+// ---- QwenWork agent transcription: voice note → queued job → write-back onto the interaction ----
+let transcribePoll = null;
+async function queueTranscription(rel, index) {
+  const relId = rel.id;
+  const audio = (rel.interactions && rel.interactions[index] && rel.interactions[index].audio) || null;
+  if (!audio) return;
+  try {
+    const job = await api('/api/transcribe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audio })
+    });
+    if (!job || !job.id) return;
+    toast('Voice note sent to the QwenWork agent for transcription');
+    if (transcribePoll) clearInterval(transcribePoll);
+    transcribePoll = setInterval(async () => {
+      try {
+        const j = await api(`/api/transcribe/${job.id}`);
+        if (j.status === 'done' && j.text) {
+          clearInterval(transcribePoll); transcribePoll = null;
+          await api(`/api/relationships/${relId}/transcription`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ index, text: j.text })
+          });
+          if (REL && REL.id === relId) {
+            REL = await api('/api/relationships/' + relId);
+            renderTimeline(); renderContext();
+          }
+          toast('Voice note transcribed by the QwenWork agent');
+        } else if (j.status === 'failed') {
+          clearInterval(transcribePoll); transcribePoll = null;
+        }
+      } catch (e) { /* keep polling */ }
+    }, 5000);
+  } catch (e) { /* transcription is non-fatal — the audio stays attached */ }
 }
 
 // ---- welcome list: relationship cards with live processing states ----
