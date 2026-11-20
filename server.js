@@ -1,11 +1,82 @@
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 8081;
 const HOST = process.env.HOST || '0.0.0.0';
+
+// ---- owner access: one shared secret ----
+// The browser signs in once at /login (HttpOnly cookie); the QwenWork agent sends
+// `Authorization: Bearer <APP_TOKEN>`. Without APP_TOKEN set, nothing private is served.
+const APP_TOKEN = process.env.APP_TOKEN || '';
+const SESSION_COOKIE = 'relate_session';
+const SESSION_VALUE = APP_TOKEN ? createHmac('sha256', APP_TOKEN).update('relate-session-v1').digest('hex') : '';
+if (!APP_TOKEN) console.warn('APP_TOKEN is not set: the workspace and its API stay locked until it is.');
+
+const sha = s => createHash('sha256').update(String(s)).digest();
+const sameSecret = (a, b) => !!a && !!b && timingSafeEqual(sha(a), sha(b));
+
+function cookies(req) {
+  const out = {};
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return out;
+}
+
+function isAuthed(req) {
+  if (!APP_TOKEN) return false;
+  const auth = String(req.headers.authorization || '');
+  if (auth.startsWith('Bearer ') && sameSecret(auth.slice(7).trim(), APP_TOKEN)) return true;
+  return sameSecret(cookies(req)[SESSION_COOKIE], SESSION_VALUE);
+}
+
+const isHttps = req => req.socket.encrypted || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+
+// Pages and actions a recipient opens from a shared link: the unguessable id in the URL is the access.
+const PUBLIC_ROUTES = [
+  ['GET', /^\/deck\/[0-9a-f-]{36}$/i],
+  ['GET', /^\/talk\/[0-9a-f-]{36}$/i],
+  ['GET', /^\/share\/[0-9a-f-]{36}$/i],
+  ['GET', /^\/api\/deck\/[0-9a-f-]{36}\/pdf$/i],
+  ['POST', /^\/api\/deck\/[0-9a-f-]{36}\/accept$/i],
+  ['PATCH', /^\/api\/talk\/[0-9a-f-]{36}\/pick$/i]
+];
+const isPublicRoute = (method, p) => PUBLIC_ROUTES.some(([m, re]) => m === method && re.test(p));
+
+// relationship columns the app may change through PATCH /api/relationships/:id
+const REL_PATCH_FIELDS = ['name', 'met_context', 'note', 'contact', 'profile_card', 'assessment', 'deck_job_id', 'next_action', 'brief', 'card'];
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// base64 PDF stored either raw or as a data: URI
+const pdfBuffer = s => Buffer.from(s.slice(s.indexOf(',') + 1), 'base64');
+
+class HttpError extends Error {
+  constructor(status, message) { super(message); this.status = status; this.expose = true; }
+}
+
+function loginPage(message) {
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Relate — sign in</title>
+<style>
+body{background:#0b0e14;color:#e8ecf4;font-family:system-ui,"Segoe UI",sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;padding:24px}
+form{max-width:380px;width:100%;background:#11151f;border:1px solid #232b3d;border-radius:18px;padding:30px 32px}
+h1{font-size:20px;margin:0 0 6px} p{color:#8b95a7;font-size:13.5px;margin:0 0 18px;line-height:1.5}
+input{width:100%;box-sizing:border-box;padding:11px 13px;border-radius:10px;border:1px solid #232b3d;background:#0b0e14;color:#e8ecf4;font-size:15px}
+button{margin-top:14px;width:100%;padding:11px;border:0;border-radius:10px;background:linear-gradient(135deg,#6c8cff,#8f6cff);color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+.err{color:#ff7a90;font-size:13px;margin-top:12px}
+</style></head><body><form method="POST" action="/login">
+<h1>Relate</h1><p>Your relationship workspace is private. Enter your access token to continue.</p>
+<input type="password" name="token" placeholder="Access token" autocomplete="current-password" autofocus required>
+<button type="submit">Sign in</button>
+${message ? `<div class="err">${esc(message)}</div>` : ''}
+</form></body></html>`;
+}
 
 // ---- Supabase REST helper (credentials injected by the Page runtime) ----
 const SB_URL = process.env.SUPABASE_URL;
@@ -44,17 +115,68 @@ function json(res, code, data) {
   res.end(JSON.stringify(data));
 }
 
+// bodies carry base64 media (PDF up to 8 MB, images/audio up to 6 MB), so cap at 12 MB
+const MAX_BODY = 12 * 1024 * 1024;
+
+async function readRaw(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_BODY) throw new HttpError(413, 'request body too large'); // rest is discarded; the reply closes the connection
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 async function readBody(req) {
-  let raw = '';
-  for await (const chunk of req) raw += chunk;
-  return raw ? JSON.parse(raw) : {};
+  const raw = await readRaw(req);
+  if (!raw) return {};
+  try {
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('not an object');
+    return data;
+  } catch { throw new HttpError(400, 'request body must be a JSON object'); }
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
+  const authed = isAuthed(req);
 
   try {
+    // ---- sign in / out ----
+    if (p === '/login' && req.method === 'GET') {
+      if (authed) { res.writeHead(302, { Location: '/' }); return res.end(); }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(loginPage(APP_TOKEN ? '' : 'Sign-in is disabled: set the APP_TOKEN environment variable on the server.'));
+    }
+    if (p === '/login' && req.method === 'POST') {
+      const token = new URLSearchParams(await readRaw(req)).get('token') || '';
+      if (!APP_TOKEN || !sameSecret(token, APP_TOKEN)) {
+        await new Promise(r => setTimeout(r, 600)); // slow down guessing
+        res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(loginPage(APP_TOKEN ? 'That token is not right.' : 'Sign-in is disabled: set APP_TOKEN on the server.'));
+      }
+      const secure = isHttps(req) ? '; Secure' : '';
+      res.writeHead(302, {
+        Location: '/',
+        'Set-Cookie': `${SESSION_COOKIE}=${SESSION_VALUE}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 30}${secure}`
+      });
+      return res.end();
+    }
+    if (p === '/logout') {
+      res.writeHead(302, { Location: '/login', 'Set-Cookie': `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0` });
+      return res.end();
+    }
+
+    // everything else is the owner's, except the recipient pages behind shared links
+    if (!authed && !isPublicRoute(req.method, p)) {
+      if (p.startsWith('/api/')) return json(res, 401, { error: 'sign in required' });
+      res.writeHead(302, { Location: '/login' });
+      return res.end();
+    }
+
     if (p === '/' || p === '/index.html') {
       const html = await readFile(path.join(__dirname, 'index.html'));
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -165,7 +287,7 @@ const server = http.createServer(async (req, res) => {
           body: JSON.stringify({ query: 'LinkedIn', numResults: 1 })
         });
         const d = await r.json().catch(() => ({}));
-        if (!r.ok) return json(res, 200, { ok: false, error: `Exa responded ${r.status}: ${(d.detail || r.statusText || '').slice ? String(d.detail || r.statusText).slice(0, 120) : ''}` });
+        if (!r.ok) return json(res, 200, { ok: false, error: `Exa responded ${r.status}: ${String(d.detail || d.error || r.statusText || '').slice(0, 120)}` });
         return json(res, 200, { ok: true });
       } catch (e) { return json(res, 200, { ok: false, error: e.message }); }
     }
@@ -188,7 +310,9 @@ const server = http.createServer(async (req, res) => {
         return { url: hit.url.split('?')[0], title: hit.title || null };
       } catch (e) { return { error: 'exa search failed: ' + e.message }; }
     }
-    // instant research via Exa answer: what they're known for, with cited sources
+    // instant research via Exa answer: what they're known for, with cited sources.
+    // Exa's citations are not ordered to match the highlights, so each highlight names its own
+    // source URL and we only mark it "sourced" when that URL is one Exa actually cited.
     async function exaResearch(name, linkedinUrl) {
       const s = await getSettings();
       if (!s.exa_key || !name) return [];
@@ -198,23 +322,34 @@ const server = http.createServer(async (req, res) => {
           headers: { 'Content-Type': 'application/json', 'x-api-key': s.exa_key },
           body: JSON.stringify({
             query: `What is ${name} known for professionally? Key projects, roles and public presence. Keep each point under 20 words. ${linkedinUrl ? `Their LinkedIn: ${linkedinUrl}.` : ''}`,
-            systemPrompt: 'Only verifiable public information. Omit anything uncertain.',
+            systemPrompt: 'Only verifiable public information. Omit anything uncertain. For every highlight, give the URL of the cited page it comes from in source_url.',
             model: 'exa-fast',
-            outputSchema: { type: 'object', properties: { highlights: { type: 'array', items: { type: 'string' } } }, required: ['highlights'] }
+            outputSchema: {
+              type: 'object',
+              properties: {
+                highlights: {
+                  type: 'array',
+                  items: { type: 'object', properties: { text: { type: 'string' }, source_url: { type: 'string' } }, required: ['text', 'source_url'] }
+                }
+              },
+              required: ['highlights']
+            }
           })
         });
         if (!r.ok) return [];
         const d = await r.json();
         let a = d.answer;
         if (typeof a === 'string') { const m = a.match(/\{[\s\S]*\}/); a = m ? JSON.parse(m[0]) : null; }
-        const cites = d.citations || [];
+        const norm = u => String(u || '').trim().replace(/[?#].*$/, '').replace(/\/+$/, '').toLowerCase();
+        const cites = new Map((d.citations || []).filter(c => c && c.url).map(c => [norm(c.url), c]));
         const highlights = (a && Array.isArray(a.highlights)) ? a.highlights : [];
-        return highlights.slice(0, 5).map((h, i) => ({
-          finding: String(h),
-          source: (cites[i] && (cites[i].title || cites[i].url)) || 'exa.ai',
-          url: (cites[i] && cites[i].url) || null,
-          status: 'sourced'
-        }));
+        return highlights.slice(0, 5).map(h => {
+          const text = typeof h === 'string' ? h : (h && h.text);
+          const cite = h && typeof h === 'object' ? cites.get(norm(h.source_url)) : null;
+          return cite
+            ? { finding: String(text || ''), source: cite.title || cite.url, url: cite.url, status: 'sourced' }
+            : { finding: String(text || ''), source: 'no matching citation — verify', url: null, status: 'gap flagged' };
+        }).filter(x => x.finding);
       } catch (e) { return []; }
     }
 
@@ -392,8 +527,7 @@ What the sender wants: ${(ctx.contact && ctx.contact.want) || ''}`;
         const rows = await sb('GET', 'deck_jobs', { query: { id: `eq.${id}`, select: 'pdf,status' } });
         const row = rows[0];
         if (!row?.pdf) return json(res, 404, { error: 'deck not ready' });
-        const b64 = row.pdf.includes(',') ? row.pdf.split(',', 1)[1] : row.pdf;
-        const buf = Buffer.from(b64, 'base64');
+        const buf = pdfBuffer(row.pdf);
         res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="insight-deck.pdf"`, 'Content-Length': buf.length });
         return res.end(buf);
       }
@@ -425,7 +559,6 @@ What the sender wants: ${(ctx.contact && ctx.contact.want) || ''}`;
     if (dsh && req.method === 'GET') {
       const rows = await sb('GET', 'deck_jobs', { query: { id: `eq.${dsh[1]}`, select: 'name,status,pdf,deck,accepted,responded_at,relationship_id' } });
       const row = rows[0];
-      const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
       const id = dsh[1];
       if (!row || (!row.deck && !row.pdf)) {
         res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -433,8 +566,7 @@ What the sender wants: ${(ctx.contact && ctx.contact.want) || ''}`;
       }
       // PDF-only fallback (no structured deck written)
       if (!row.deck) {
-        const b64 = row.pdf.includes(',') ? row.pdf.split(',', 1)[1] : row.pdf;
-        const buf = Buffer.from(b64, 'base64');
+        const buf = pdfBuffer(row.pdf);
         res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': buf.length });
         return res.end(buf);
       }
@@ -590,7 +722,6 @@ What the sender wants: ${(ctx.contact && ctx.contact.want) || ''}`;
       const id = tsh[1];
       const rows = await sb('GET', 'talk_jobs', { query: { id: `eq.${id}`, select: 'name,status,track,picked_topic,responded_at,relationship_id' } });
       const row = rows[0];
-      const esc = s2 => String(s2 ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
       if (!row || !row.track) {
         res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end('<h2 style="font-family:sans-serif">Talk track not found.</h2>');
@@ -748,10 +879,17 @@ What the sender wants: ${(ctx.contact && ctx.contact.want) || ''}`;
     }
 
     // /api/relationships/:id/...
-    const m = p.match(/^\/api\/relationships\/([0-9a-f-]{36})(\/(brief|card|interaction|next_action))?$/i);
+    const m = p.match(/^\/api\/relationships\/([0-9a-f-]{36})(\/(brief|card|interaction|next_action|transcription))?$/i);
     if (m) {
       const id = m[1];
       const action = m[3];
+
+      // fetch one relationship (used after an agent write-back to refresh the view)
+      if (req.method === 'GET' && !action) {
+        const rows = await sb('GET', 'relationships', { query: { id: `eq.${id}`, select: '*' } });
+        if (!rows[0]) return json(res, 404, { error: 'not found' });
+        return json(res, 200, rows[0]);
+      }
 
       // delete a relationship (and its card) entirely
       if (req.method === 'DELETE' && !action) {
@@ -766,11 +904,15 @@ What the sender wants: ${(ctx.contact && ctx.contact.want) || ''}`;
       }
 
       if (req.method === 'PATCH' && !action) {
-        const body = await readBody(req);
-        const rows = await sb('PATCH', 'relationships', {
-          query: { id: `eq.${id}` },
-          body
-        });
+        const input = await readBody(req);
+        const body = {};
+        for (const k of REL_PATCH_FIELDS) if (k in input) body[k] = input[k];
+        const rejected = Object.keys(input).filter(k => !REL_PATCH_FIELDS.includes(k));
+        if (rejected.length) return json(res, 400, { error: `field(s) not editable: ${rejected.join(', ')}` });
+        if (!Object.keys(body).length) return json(res, 400, { error: 'nothing to update' });
+        if ('name' in body && (typeof body.name !== 'string' || !body.name.trim())) return json(res, 400, { error: 'name must be a non-empty string' });
+        const rows = await sb('PATCH', 'relationships', { query: { id: `eq.${id}` }, body });
+        if (!rows[0]) return json(res, 404, { error: 'not found' });
         return json(res, 200, rows[0]);
       }
 
@@ -825,7 +967,6 @@ What the sender wants: ${(ctx.contact && ctx.contact.want) || ''}`;
     if (sh && req.method === 'GET') {
       const rows = await sb('GET', 'relationships', { query: { id: `eq.${sh[1]}`, select: 'name,card' } });
       const row = rows[0];
-      const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
       if (!row || !row.card) {
         res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end('<h2 style="font-family:sans-serif">Card not found or not shared yet.</h2>');
@@ -880,43 +1021,18 @@ pre{white-space:pre-wrap;font:inherit;font-size:15px;line-height:1.65;color:#ccd
       }
     }
 
-    // isolated speech-recognition test page (diagnostics)
-    if (p === '/stt-test' && req.method === 'GET') {
-      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>STT test</title>
-<style>body{font-family:system-ui;background:#0b0e14;color:#e8ecf4;padding:30px;max-width:640px;margin:auto}
-button{padding:12px 22px;font-size:15px;border-radius:10px;border:0;background:#6c8cff;color:#fff;cursor:pointer}
-#log div{padding:6px 0;border-bottom:1px dashed #232b3d;font-size:13px} .t{color:#8b95a7;font-size:11px}
-#txt{margin-top:14px;font-size:16px;min-height:60px}</style></head><body>
-<h2>Speech recognition test (no recorder)</h2>
-<button onclick="start()">Start recognition</button>
-<div id="txt"></div><div id="log"></div>
-<script>
-const log = m => { const d=document.createElement('div'); d.innerHTML='<span class="t">'+new Date().toLocaleTimeString()+'</span> '+m; document.getElementById('log').prepend(d); };
-function start(){
-  const SR = window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){ log('SpeechRecognition NOT supported in this browser'); return; }
-  const r = new SR(); r.continuous=true; r.interimResults=true; r.lang='en-SG';
-  r.onstart=()=>log('onstart — listening');
-  r.onerror=e=>log('<b style="color:#ff5470">onerror: '+e.error+'</b>');
-  r.onend=()=>log('onend — recognizer stopped');
-  r.onresult=e=>{
-    let final='',interim='';
-    for(let i=e.resultIndex;i<e.results.length;i++){const x=e.results[i]; if(x.isFinal)final+=x[0].transcript; else interim+=x[0].transcript;}
-    log('onresult — final: "'+final+'" interim: "'+interim+'"');
-    document.getElementById('txt').textContent += final;
-  };
-  r.start(); log('start() called');
-}
-</script></body></html>`;
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return res.end(html);
-    }
-
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'not found' }));
   } catch (err) {
     console.error(err.message);
-    json(res, 500, { error: 'server error', detail: err.message });  }
+    if (res.headersSent) return res.end();
+    if (err instanceof HttpError) {
+      if (err.status === 413) res.setHeader('Connection', 'close');
+      return json(res, err.status, { error: err.message });
+    }
+    // only the signed-in owner sees the underlying cause (e.g. a Supabase error); public pages get a generic 500
+    json(res, 500, authed || err.expose ? { error: 'server error', detail: err.message } : { error: 'server error' });
+  }
 });
 
 server.listen(PORT, HOST, () => console.log(`OPC relationship workspace listening on ${HOST}:${PORT}`));

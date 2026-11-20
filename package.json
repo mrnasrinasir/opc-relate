@@ -1,8 +1,13 @@
 {
-  "name": "opc-relationship-agent",
+  "name": "opc-relate",
   "version": "1.0.0",
+  "description": "Relate: a relationship workspace for one-person companies",
   "private": true,
   "type": "module",
-  "scripts": { "start": "node server.js" },
-  "engines": { "node": ">=22" }
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
 }

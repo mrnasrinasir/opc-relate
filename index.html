@@ -451,6 +451,16 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// ---- HTML safety: everything from Exa, the web, the agent or the DB goes through these before innerHTML ----
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// only http(s) links (and, where allowed, inline data: audio/images we recorded ourselves)
+const safeUrl = (u, allowData) => {
+  const s = String(u ?? '').trim();
+  if (/^https?:\/\//i.test(s)) return s;
+  if (allowData && /^data:(audio|image)\/[a-z0-9.+-]+;base64,/i.test(s)) return s;
+  return '';
+};
+
 let REL = null; // current relationship row
 let PROFILE = null; // { name, role, offer, looking, tone }
 
@@ -466,7 +476,7 @@ function renderWho() {
     return;
   }
   $('whoName').textContent = `${PROFILE.name}${PROFILE.role ? ' · ' + PROFILE.role : ''}`;
-  const photo = PROFILE.photo || (PROFILE.linkedin_card && PROFILE.linkedin_card.photo);
+  const photo = safeUrl(PROFILE.photo || (PROFILE.linkedin_card && PROFILE.linkedin_card.photo), true);
   const av = $('whoAvatar');
   if (photo) {
     av.textContent = '';
@@ -479,6 +489,7 @@ function renderWho() {
 
 async function loadProfile() {
   try { PROFILE = await api('/api/profile'); } catch (e) { PROFILE = null; }
+  if (PROFILE && !PROFILE.name) PROFILE = null; // seeded empty row = not set up yet
   renderWho();
   if (!PROFILE) openProfile(); // first visit: guided setup
 }
@@ -652,7 +663,7 @@ async function pullOwnProfile() {
 
 function applyPullToReview(status, card) {
   status.innerHTML = `<b style="color:var(--ok)">✓ Pulled</b><br>
-    <span style="font-size:12.5px;line-height:1.5;display:block;margin-top:4px">${(card.headline || '').slice(0, 120)}${(card.location && card.location.text) ? ' · ' + card.location.text : ''}</span>
+    <span style="font-size:12.5px;line-height:1.5;display:block;margin-top:4px">${esc((card.headline || '').slice(0, 120))}${(card.location && card.location.text) ? ' · ' + esc(card.location.text) : ''}</span>
     <span style="font-size:11.5px;color:var(--muted);display:block;margin-top:4px">Fields below are prefilled — correct anything before finishing.</span>`;
   if (!pwDraft.name && card.name) { pwDraft.name = card.name; const el = $('pw_name'); if (el) el.value = card.name; }
   if (card.headline) { const el = $('pw_role'); if (el && !el.value.trim()) el.value = card.headline; pwDraft.role = pwDraft.role || card.headline; }
@@ -807,7 +818,7 @@ function genBrief(rel) {
     who: rel.contact?.role ? `${rel.name} — ${rel.contact.role}` : rel.name,
     need: need.trim(),
     promise: promise.trim(),
-    opportunity: `${first} is working on ${oppTopic} — this could become paid work around it, if the conversation continues well. <i>A suggestion, not a confirmed deal.</i>`,
+    opportunity: `${first} is working on ${oppTopic} — this could become paid work around it, if the conversation continues well.`,
     angle,
     next: promiseThing
       ? `Send ${promiseThing.trim()} within 2 days, then follow up with a short compare-notes message about ${oppTopic}.`
@@ -819,12 +830,13 @@ function renderBrief() {
   if (!$('convList')) return;
   if (!REL) { $('convList').innerHTML = '<li>Save a conversation first — the draft is generated from it.</li>'; return; }
   const b = genBrief(REL);
+  // labels are our own markup; values come from the note / profile and are escaped
   const rows = [
-    ['Who', b.who], ['Stated need', b.need], ['Your promise', b.promise],
-    ['Possible opportunity', b.opportunity]
+    ['Who', esc(b.who)], ['Stated need', esc(b.need)], ['Your promise', esc(b.promise)],
+    ['Possible opportunity', esc(b.opportunity) + ' <i>A suggestion, not a confirmed deal.</i>']
   ];
-  if (b.angle) rows.push(['Your angle <span class="tag private" style="vertical-align:1px">FROM YOUR PROFILE</span>', b.angle]);
-  rows.push(['Suggested next step', b.next]);
+  if (b.angle) rows.push(['Your angle <span class="tag private" style="vertical-align:1px">FROM YOUR PROFILE</span>', esc(b.angle)]);
+  rows.push(['Suggested next step', esc(b.next)]);
   $('convList').innerHTML = rows.map(([k, v]) =>
     `<li contenteditable="true" style="cursor:text"><b>${k}:</b> <span>${v}</span></li>`).join('');
 }
@@ -836,8 +848,8 @@ function renderFollowup() {
   const box = $('nextStepsBox');
   if (!box) return;
   if (!REL) { box.innerHTML = ''; return; }
-  const linkedin = (REL.contact && REL.contact.linkedin) || (REL.profile_card && REL.profile_card.url) || '';
-  const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const rawLinkedin = (REL.contact && REL.contact.linkedin) || (REL.profile_card && REL.profile_card.url) || '';
+  const linkedin = rawLinkedin ? safeUrl(/^https?:\/\//i.test(rawLinkedin) ? rawLinkedin : 'https://' + rawLinkedin) : '';
   box.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px" class="grid2">
       <div style="border:1px solid var(--line);border-radius:14px;padding:18px 20px">
@@ -853,7 +865,7 @@ function renderFollowup() {
     </div>
     <div class="actions" style="justify-content:flex-start">
       <button class="btn primary" id="nsDraftBtn" onclick="draftNextSteps()">✨ Draft next steps</button>
-      ${linkedin ? `<a class="btn ghost" href="${esc(linkedin.startsWith('http') ? linkedin : 'https://' + linkedin)}" target="_blank" style="text-decoration:none">Open their LinkedIn ↗</a>` : ''}
+      ${linkedin ? `<a class="btn ghost" href="${esc(linkedin)}" target="_blank" rel="noopener" style="text-decoration:none">Open their LinkedIn ↗</a>` : ''}
       <button class="btn ghost" onclick="go(0)">↺ Back to workspace</button>
     </div>`;
   renderNextDrafts();
@@ -862,7 +874,6 @@ function renderFollowup() {
 function renderNextDrafts() {
   const emailBox = $('nsEmail'), liBox = $('nsLinkedin');
   if (!emailBox || !liBox) return;
-  const esc = v => String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
   if (!nextDrafts) {
     emailBox.innerHTML = liBox.innerHTML = '<div style="font-size:12.5px;color:var(--muted);min-height:60px;display:grid;place-items:center">Draft appears here</div>';
     return;
@@ -928,8 +939,8 @@ function renderNextAction() {
   const first = REL.name.split(' ')[0];
   const topic = (b.need.match(/second outlet|new (branch|outlet|location|store|product|venture)|expand\w*|rebrand\w*|website|brand\w*|marketing|startup|consultan\w*|train\w*|organi\w*/i) || ['their plans'])[0].toLowerCase();
   box.style.display = 'block';
-  box.innerHTML = `<b>Next action:</b> ${REL.next_action || `Move on the promise — ${b.next.toLowerCase()}`}
-    <div class="st">Status: open · ${first} · suggested by the agent from your conversation</div>`;
+  box.innerHTML = `<b>Next action:</b> ${esc(REL.next_action || `Move on the promise — ${b.next.toLowerCase()}`)}
+    <div class="st">Status: open · ${esc(first)} · suggested by the agent from your conversation</div>`;
 }
 
 // ---- talk track: a pre-planned conversation agenda — topics + discovery questions, generated instantly via Exa ----
@@ -995,7 +1006,7 @@ async function renderTalk() {
     return;
   }
   const first = REL.name.split(' ')[0];
-  state.innerHTML = '<b style="font-size:15px">Talk track ready</b><br><span style="font-size:12.5px;color:var(--muted)">' + (job.track && job.track.topics ? job.track.topics.length : 3) + ' topics with discovery questions for your conversation with ' + first + '. Mark where you want to start.</span>';
+  state.innerHTML = '<b style="font-size:15px">Talk track ready</b><br><span style="font-size:12.5px;color:var(--muted)">' + (job.track && job.track.topics ? job.track.topics.length : 3) + ' topics with discovery questions for your conversation with ' + esc(first) + '. Mark where you want to start.</span>';
   actions.innerHTML = '';
   // inline agenda (private — no shared page)
   const panel = $('talkPanel');
@@ -1007,14 +1018,14 @@ async function renderTalk() {
   prev.innerHTML = topics.map((t, i) => `
     <div style="border:1px solid ${job.picked_topic === i ? 'rgba(110,231,160,.5)' : 'var(--line)'};border-radius:12px;padding:14px 18px;margin-top:12px;${job.picked_topic === i ? 'background:rgba(74,222,128,.05)' : ''}">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-        <b style="font-size:15px">${t.topic}</b>
+        <b style="font-size:15px">${esc(t.topic)}</b>
         ${job.picked_topic === i
           ? '<span class="vtag v-pursue" style="border:1px solid rgba(74,222,128,.5)">✓ starting here</span>'
           : `<button class="btn ghost small" onclick="pickTopic(${i})">Start here</button>`}
       </div>
-      <div style="font-size:12.5px;color:var(--muted);margin-top:4px">${t.why || ''}</div>
-      <ul class="clean" style="margin-top:8px">${(t.questions || []).map(q => `<li>${q}</li>`).join('')}</ul>
-      ${t.bring ? `<div style="font-size:13px;color:var(--accent);margin-top:6px">I can bring: ${t.bring}</div>` : ''}
+      <div style="font-size:12.5px;color:var(--muted);margin-top:4px">${esc(t.why || '')}</div>
+      <ul class="clean" style="margin-top:8px">${(t.questions || []).map(q => `<li>${esc(q)}</li>`).join('')}</ul>
+      ${t.bring ? `<div style="font-size:13px;color:var(--accent);margin-top:6px">I can bring: ${esc(t.bring)}</div>` : ''}
     </div>`).join('');
 }
 
@@ -1047,18 +1058,18 @@ function renderProfileHead() {
   if (!REL) { box.innerHTML = ''; return; }
   const pc = REL.profile_card || {};
   const role = pc.headline || pc.role || (REL.contact && REL.contact.role) || '';
-  const photo = pc.photo || '';
-  const initials = (REL.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const photo = safeUrl(pc.photo, true);
+  const initials = esc((REL.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase());
   box.innerHTML = `
     <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
       ${photo
-        ? `<img src="${photo}" alt="" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:2px solid var(--line)">`
+        ? `<img src="${esc(photo)}" alt="" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:2px solid var(--line)">`
         : `<div style="width:84px;height:84px;border-radius:50%;background:var(--bg2);border:2px solid var(--line);display:grid;place-items:center;font-size:24px;color:var(--muted)">${initials}</div>`}
       <div style="flex:1;min-width:220px">
-        <div style="font-size:22px;font-weight:700">${REL.name || '—'}</div>
-        ${role ? `<div style="font-size:14px;margin-top:4px;line-height:1.45">${role}</div>` : ''}
-        ${pc.location ? `<div style="font-size:12.5px;color:var(--muted);margin-top:4px">📍 ${pc.location}</div>` : ''}
-        ${pc.company ? `<div style="font-size:12.5px;color:var(--muted);margin-top:2px">🏢 ${pc.company}</div>` : ''}
+        <div style="font-size:22px;font-weight:700">${esc(REL.name || '—')}</div>
+        ${role ? `<div style="font-size:14px;margin-top:4px;line-height:1.45">${esc(role)}</div>` : ''}
+        ${pc.location ? `<div style="font-size:12.5px;color:var(--muted);margin-top:4px">📍 ${esc(pc.location)}</div>` : ''}
+        ${pc.company ? `<div style="font-size:12.5px;color:var(--muted);margin-top:2px">🏢 ${esc(pc.company)}</div>` : ''}
       </div>
     </div>`;
 }
@@ -1080,14 +1091,14 @@ function renderAnalysis() {
   const pc = REL.profile_card || {};
   const research = pc.research || [];
   box.innerHTML = `
-    ${pc.about ? `<div style="font-size:13px;color:#ccd5e4;line-height:1.55;margin-bottom:16px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:12px 16px">${String(pc.about).slice(0, 280)}${String(pc.about).length > 280 ? '…' : ''}</div>` : ''}
+    ${pc.about ? `<div style="font-size:13px;color:#ccd5e4;line-height:1.55;margin-bottom:16px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:12px 16px">${esc(String(pc.about).slice(0, 280))}${String(pc.about).length > 280 ? '…' : ''}</div>` : ''}
     ${research.length ? `
       <div>
         <h2 style="font-size:14.5px;margin-bottom:8px">Research <span class="tag source">INSTANT VIA EXA</span></h2>
         <ul class="clean">
-          ${research.map(r => `<li>${r.finding} ${r.url
-            ? `<a href="${r.url}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent)">${r.source} ↗</a>`
-            : `<span style="font-size:12px;color:var(--muted)">${r.source}</span>`}</li>`).join('')}
+          ${research.map(r => `<li>${esc(r.finding)} ${r.status === 'gap flagged' ? '<span class="tag source">gap flagged</span> ' : ''}${safeUrl(r.url)
+            ? `<a href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent)">${esc(r.source)} ↗</a>`
+            : `<span style="font-size:12px;color:var(--muted)">${esc(r.source)}</span>`}</li>`).join('')}
         </ul>
       </div>` : ''}
     ${!pc.about && !research.length ? `<div class="banner">Basics only on this card — no overview or research was pulled.</div>` : ''}`;
@@ -1101,16 +1112,16 @@ function renderContext() {
   const decision = REL.assessment && REL.assessment.decision;
   box.innerHTML = `
     <label>What you want with this person</label>
-    <textarea id="wantInput" rows="2" placeholder="e.g. explore a collaboration, get advice, a client…">${String(want).replace(/</g, '&lt;')}</textarea>
+    <textarea id="wantInput" rows="2" placeholder="e.g. explore a collaboration, get advice, a client…">${esc(want)}</textarea>
     <div class="actions" style="justify-content:flex-start;margin-top:8px">
       <button class="btn ghost small" onclick="saveWant()">Save</button>
     </div>
 
     <h2 style="font-size:14.5px;margin:18px 0 8px">Capture notes</h2>
     <ul class="clean">
-      ${REL.met_context ? `<li><b>Where:</b> ${REL.met_context}</li>` : ''}
-      ${REL.note && REL.note !== 'No conversation context supplied.' ? `<li><b>Notes:</b> ${String(REL.note).replace(/</g, '&lt;')}</li>` : ''}
-      ${(REL.interactions || []).map(i => `<li><b>${i.author || 'You'}:</b> ${(i.text || '(voice note)').replace(/</g, '&lt;')}</li>`).join('')}
+      ${REL.met_context ? `<li><b>Where:</b> ${esc(REL.met_context)}</li>` : ''}
+      ${REL.note && REL.note !== 'No conversation context supplied.' ? `<li><b>Notes:</b> ${esc(REL.note)}</li>` : ''}
+      ${(REL.interactions || []).map(i => `<li><b>${esc(i.author || 'You')}:</b> ${esc(i.text || '(voice note)')}</li>`).join('')}
     </ul>
 
     <h2 style="font-size:14.5px;margin:18px 0 8px">Your call</h2>
@@ -1147,14 +1158,14 @@ function renderContact() {
   const c = REL?.contact || {};
   const chips = [
     c.role && ['💼', c.role],
-    c.email && ['✉', c.email, c.email.includes('@') ? 'mailto:'+c.email : null],
-    c.phone && ['☏', c.phone, 'tel:'+c.phone.replace(/\s/g,'')],
-    c.linkedin && ['in', c.linkedin, c.linkedin.startsWith('http') ? c.linkedin : 'https://'+c.linkedin]
+    c.email && ['✉', c.email, c.email.includes('@') ? 'mailto:' + encodeURIComponent(c.email.trim()).replace(/%40/g, '@') : null],
+    c.phone && ['☏', c.phone, 'tel:' + c.phone.replace(/[^0-9+]/g, '')],
+    c.linkedin && ['in', c.linkedin, safeUrl(/^https?:\/\//i.test(c.linkedin) ? c.linkedin : 'https://' + c.linkedin) || null]
   ].filter(Boolean);
   strip.innerHTML = chips.map(([icon, label, href]) =>
     href
-      ? `<a href="${href}" target="_blank" rel="noopener" style="text-decoration:none;color:var(--ink);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:12.5px">${icon} ${label}</a>`
-      : `<span style="background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:12.5px">${icon} ${label}</span>`
+      ? `<a href="${esc(href)}" target="_blank" rel="noopener" style="text-decoration:none;color:var(--ink);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:12.5px">${icon} ${esc(label)}</a>`
+      : `<span style="background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:12.5px">${icon} ${esc(label)}</span>`
   ).join('');
 }
 
@@ -1164,7 +1175,7 @@ function renderResearch() {
   const items = REL?.research || [];
   if (!items.length) {
     list.innerHTML = `<li id="researchAsk">No research attached — nothing is auto-researched.<br>
-      <button class="btn ghost small" style="margin-top:8px" onclick="queueResearch()">⚡ Ask the QwenWork agent to research ${REL ? (REL.name.split(' ')[0] || 'them') : 'them'}</button></li>`;
+      <button class="btn ghost small" style="margin-top:8px" onclick="queueResearch()">⚡ Ask the QwenWork agent to research ${esc(REL ? (REL.name.split(' ')[0] || 'them') : 'them')}</button></li>`;
     return;
   }
   list.innerHTML = '';
@@ -1173,9 +1184,10 @@ function renderResearch() {
     const tag = r.status === 'gap flagged'
       ? '<span class="tag source">gap flagged</span>'
       : '<span class="tag source">sourced</span>';
-    li.innerHTML = `${r.finding} ${tag}<br>` +
-      (r.url ? `<a href="${r.url}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent)">${r.source} ↗</a>`
-             : `<span style="font-size:12px;color:var(--muted)">${r.source}</span>`);
+    const href = safeUrl(r.url);
+    li.innerHTML = `${esc(r.finding)} ${tag}<br>` +
+      (href ? `<a href="${esc(href)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent)">${esc(r.source)} ↗</a>`
+            : `<span style="font-size:12px;color:var(--muted)">${esc(r.source)}</span>`);
     list.appendChild(li);
   });
 }
@@ -1438,10 +1450,10 @@ function applyProfileCard(card) {
   $('profileCardName').textContent = card.name || 'Their profile card';
   $('profileCardSrc').textContent = 'read from their public LinkedIn — verify before saving';
   $('profileCardContent').innerHTML = [
-    card.headline && `<b>${card.headline}</b>`,
-    card.location && `<span style="color:var(--muted)">${card.location}</span>`,
-    card.about && `<span>"${String(card.about).slice(0, 220)}${String(card.about).length > 220 ? '…' : ''}"</span>`,
-    card.activity && `<span style="color:var(--muted)">recent: ${card.activity}</span>`
+    card.headline && `<b>${esc(card.headline)}</b>`,
+    card.location && `<span style="color:var(--muted)">${esc(card.location)}</span>`,
+    card.about && `<span>"${esc(String(card.about).slice(0, 220))}${String(card.about).length > 220 ? '…' : ''}"</span>`,
+    card.activity && `<span style="color:var(--muted)">recent: ${esc(card.activity)}</span>`
   ].filter(Boolean).join('<br>');
   // map into the editable fields — user verifies
   if (card.name && !$('fName').value.trim()) $('fName').value = card.name;
@@ -1464,16 +1476,16 @@ function renderAssessment() {
   const verdictCls = a.verdict === 'Worth pursuing' ? 'ok' : (a.verdict === 'Reject' ? 'simulated' : 'verified');
   const dims = (a.matrix || []).map(d => `
     <tr>
-      <td style="padding:9px 12px; font-size:13.5px; border-bottom:1px dashed var(--line)">${d.dimension}</td>
-      <td style="padding:9px 12px; border-bottom:1px dashed var(--line)"><b style="color:${d.score >= 4 ? 'var(--ok)' : d.score <= 2 ? '#ff7a90' : 'var(--warn)'}">${d.score}/5</b></td>
-      <td style="padding:9px 12px; font-size:12.5px; color:var(--muted); border-bottom:1px dashed var(--line)">${d.rationale}</td>
+      <td style="padding:9px 12px; font-size:13.5px; border-bottom:1px dashed var(--line)">${esc(d.dimension)}</td>
+      <td style="padding:9px 12px; border-bottom:1px dashed var(--line)"><b style="color:${d.score >= 4 ? 'var(--ok)' : d.score <= 2 ? '#ff7a90' : 'var(--warn)'}">${esc(d.score)}/5</b></td>
+      <td style="padding:9px 12px; font-size:12.5px; color:var(--muted); border-bottom:1px dashed var(--line)">${esc(d.rationale)}</td>
     </tr>`).join('');
-  const relate = (a.relate || []).map(r => `<li>${r}</li>`).join('');
-  const questions = (a.discovery_questions || []).map(q => `<li>${q}</li>`).join('');
+  const relate = (a.relate || []).map(r => `<li>${esc(r)}</li>`).join('');
+  const questions = (a.discovery_questions || []).map(q => `<li>${esc(q)}</li>`).join('');
   box.innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-      <span class="tag ${verdictCls}" style="font-size:12.5px">${(a.verdict || 'ASSESSING').toUpperCase()}</span>
-      <span style="font-size:14px; color:var(--ink)">${a.summary || ''}</span>
+      <span class="tag ${verdictCls}" style="font-size:12.5px">${esc((a.verdict || 'ASSESSING').toUpperCase())}</span>
+      <span style="font-size:14px; color:var(--ink)">${esc(a.summary || '')}</span>
       <span class="tag source">AGENT SCORE — YOU DECIDE</span>
     </div>
     ${dims ? `<table style="width:100%; border-collapse:collapse; background:var(--bg2); border:1px solid var(--line); border-radius:12px; margin-bottom:16px">
@@ -1611,33 +1623,23 @@ function renderTimeline() {
   tl.querySelectorAll('[data-saved]').forEach(n => n.remove());
   (REL?.interactions || []).forEach((it, idx) => {
     const el = document.createElement('div');
-    el.className = 'bubble ' + (it.author === 'Daniel' ? 'left' : 'right');
+    el.className = 'bubble right'; // every interaction is authored by you (was a hardcoded demo name check)
     el.setAttribute('data-saved', '1');
     let inner = '';
-    if (it.text) inner += it.text;
-    if (it.audio) {
-      inner += `<br><audio controls src="${it.audio}" style="height:32px;margin-top:8px"></audio>`;
+    if (it.text) inner += esc(it.text);
+    const audioSrc = safeUrl(it.audio, true);
+    if (audioSrc) {
+      inner += `<br><audio controls src="${esc(audioSrc)}" style="height:32px;margin-top:8px"></audio>`;
       if (!it.text || /^pending/i.test(it.text)) {
-        inner += `<br><button class="btn ghost small" style="margin-top:8px" onclick="queueTranscription(${idx})">⚡ Transcribe with the QwenWork agent</button>`;
+        inner += `<br><button class="btn ghost small" style="margin-top:8px" onclick="queueTranscription(REL, ${idx})">⚡ Transcribe with the QwenWork agent</button>`;
       }
     }
     const byline = it.transcribed_by === 'qwenwork-agent'
       ? 'transcribed by the QwenWork agent'
       : 'recorded in-app';
-    el.innerHTML = `${inner}<span class="meta">${it.author} · ${byline} · ${new Date(it.at).toLocaleString()}</span>`;
+    el.innerHTML = `${inner}<span class="meta">${esc(it.author)} · ${byline} · ${esc(new Date(it.at).toLocaleString())}</span>`;
     tl.appendChild(el);
   });
-}
-
-async function queueTranscription(idx) {
-  if (!REL) return;
-  toast('Queued for the QwenWork agent — the transcript will appear here once processed');
-  // optimistic pending state; the agent writes the real transcript back via the API
-  const rows = await api(`/api/relationships/${REL.id}/transcription`, {
-    method: 'PUT', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ index: idx, text: 'Pending QwenWork transcription…' })
-  }).catch(() => null);
-  if (rows) { REL = rows; renderTimeline(); }
 }
 
 const $ = id => document.getElementById(id);
@@ -1780,6 +1782,7 @@ async function agentOcr(auto) {
 
 async function api(path, opts) {
   const res = await fetch(path, opts);
+  if (res.status === 401) { location.href = '/login'; throw new Error('signed out'); }
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -1968,12 +1971,13 @@ async function loadAndShow() {
           ? '<span class="vtag v-pursue" style="border:1px solid rgba(74,222,128,.5)">✓ topic picked</span>'
           : '';
         const nextTag = r.next_action ? '<span class="vtag v-card">next action open</span>' : '';
-        const photo = (r.profile_card || {}).photo;
+        const photo = safeUrl((r.profile_card || {}).photo, true);
+        const cssUrl = photo.replace(/["'()\\\s]/g, c => '%' + c.charCodeAt(0).toString(16).padStart(2, '0'));
         el.innerHTML = `
           <div class="del" title="Delete relationship and its card">✕</div>
-          <div class="mark" ${photo ? `style="background-image:url('${photo.replace(/'/g, '%27')}');background-size:cover;background-position:center;border-radius:50%"` : ''}>${photo ? '' : r.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
-          <b>${r.name}</b>
-          <div class="meta">${(r.contact && r.contact.role) || r.met_context || ''}</div>
+          <div class="mark" ${photo ? `style="background-image:url('${esc(cssUrl)}');background-size:cover;background-position:center;border-radius:50%"` : ''}>${photo ? '' : esc(r.name.split(' ').map(w=>w[0]).join('').slice(0,2))}</div>
+          <b>${esc(r.name)}</b>
+          <div class="meta">${esc((r.contact && r.contact.role) || r.met_context || '')}</div>
           <div class="tags">${decTag}${verdict}${deckTag}${cardTag}${nextTag}</div>
           ${proc ? '<div class="proc"><span class="spin"></span>agent assessing — research in progress…</div>'
                  : a ? '' : '<div class="meta" style="font-size:11px">not assessed yet</div>'}
