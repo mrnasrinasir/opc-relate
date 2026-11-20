@@ -1081,23 +1081,22 @@ function renderResearch() {
 }
 
 // ---- four-step relationship capture ----
-let gStep = 0, gMode = null, gPick = null, gLinkLaunched = false; // gMode: 'manual'|'linkedin'; gPick: 'qr'|'card'|'url'
+let gStep = 0, gMode = null; // gMode: 'manual' | 'linkedin'
 const gFields = { name: 'fName', role: 'fRole', link: 'fLinkedin', note: 'fNote', review: 'fName' };
 function gPlan() {
   if (!gMode) return ['method'];
   if (gMode === 'manual') return ['name', 'role', 'note'];
-  return ['pick', 'link', 'review', 'note'];
+  return ['link', 'review', 'note'];
 }
 function gCur() { return gPlan()[gStep] || 'note'; }
 function gSync() { const f = gFields[gCur()]; if (f && gCur() !== 'review') $(f).value = $('chatInput').value; }
 function gSend() { handleAnswer($('chatInput').value.trim()); }
 function gChoose(mode) { gMode = mode; gStep = 0; renderG(); }
-function gChoosePick(pick) { gPick = pick; gStep = 1; renderG(); }
 function handleAnswer(v) {
   if ($('btnSave').disabled) return;
   if (mediaRec && mediaRec.state === 'recording') { toast('Stop recording before continuing'); return; }
   const cur = gCur();
-  if (cur === 'method' || cur === 'pick') return; // choice steps: use the buttons
+  if (cur === 'method') return; // choice step: use the buttons
   if ((cur === 'name' || cur === 'review') && !v) { toast('A name is required'); $('chatInput').focus(); return; }
   if (cur === 'link' && v && !/^(https?:\/\/)?(www\.)?linkedin\.com\/in\/[^\s]+$/i.test(v)) {
     toast('Enter a LinkedIn profile URL or skip this step'); return;
@@ -1111,8 +1110,7 @@ function gBack() {
   if (mediaRec && mediaRec.state === 'recording') { toast('Stop recording before going back'); return; }
   if (gStep === 0 && !gMode) { stopQR(); go(0); return; } // first step: exit capture, back to workspace
   gSync(); stopQR();
-  if (gCur() === 'pick') gMode = null;      // pick → method choice
-  if (gCur() === 'link') gPick = null;      // link → pick
+  if (gCur() === 'link' || gCur() === 'review') gMode = 'linkedin'; // stay in linkedin path
   gStep = Math.max(0, gStep - 1); renderG();
 }
 function gSkip() {
@@ -1127,11 +1125,11 @@ function gAfterLink(first, pulled) {
 }
 function renderG() {
   const plan = gPlan(); const cur = plan[gStep] || 'note';
-  const isChoice = cur === 'method' || cur === 'pick';
+  const isChoice = cur === 'method';
   $('gDots').innerHTML = plan.map((_, i) => `<span class="pdt ${i < gStep ? 'done' : i === gStep ? 'on' : ''}"></span>`).join('');
   $('gStage').textContent = `Step ${gStep + 1} of ${plan.length}`;
-  const Q = { method: 'How do you want to add them?', pick: 'How should we find their LinkedIn?', name: 'Who did you meet?', role: 'What do they do?', link: 'Their LinkedIn profile', review: 'Does this look right?', note: 'What did you talk about?' };
-  const D = { method: 'Add them by hand, or pull their public details from LinkedIn.', pick: 'Scan their QR code, upload a card photo, or paste the link yourself.', name: 'Start with their name.', role: 'Add their company or role, and where you met if you remember.', link: gPick === 'qr' ? 'Point your camera at the QR code in their LinkedIn app — we pull the profile automatically.' : gPick === 'card' ? 'Upload a business card photo — the agent reads it for you.' : 'Paste their profile link (linkedin.com/in/…).', review: 'We pulled their public profile — check the name and details before saving.', note: 'Add needs, promises, or useful context. You can also record a voice note.' };
+  const Q = { method: 'How do you want to add them?', name: 'Who did you meet?', role: 'What do they do?', link: 'Their LinkedIn profile', review: 'Does this look right?', note: 'What did you talk about?' };
+  const D = { method: 'Add them by hand, or pull their public details from LinkedIn.', name: 'Start with their name.', role: 'Add their company or role, and where you met if you remember.', link: 'Paste their link, scan their LinkedIn QR, or upload a business card — we pull the profile instantly.', review: 'We pulled their public profile — check the name and details before saving.', note: 'Add needs, promises, or useful context. You can also record a voice note.' };
   $('gQuestion').textContent = Q[cur];
   $('gDescription').textContent = D[cur];
 
@@ -1142,19 +1140,13 @@ function renderG() {
     choices.innerHTML = `
       <button class="btn primary" style="width:100%" onclick="gChoose('linkedin')">Read their LinkedIn profile</button>
       <button class="btn ghost" style="width:100%" onclick="gChoose('manual')">Add manually</button>`;
-  } else if (cur === 'pick') {
-    choices.style.display = 'flex';
-    choices.innerHTML = `
-      <button class="btn ghost" style="width:100%" onclick="gChoosePick('qr')">⌗ Scan QR code</button>
-      <button class="btn ghost" style="width:100%" onclick="gChoosePick('card')">📇 Upload photo / business card</button>
-      <button class="btn ghost" style="width:100%" onclick="gChoosePick('url')">🔗 Enter LinkedIn URL</button>`;
   } else choices.style.display = 'none';
 
   const f = gFields[cur];
   $('gInputLabel').style.display = isChoice ? 'none' : 'block';
   $('chatInput').style.display = isChoice ? 'none' : 'block';
   if (f) {
-    $('gInputLabel').textContent = { name: 'Full name', role: 'Company / role (optional)', link: 'LinkedIn URL (optional)', note: 'Context notes (optional)', review: 'Their name (edit if wrong)' }[cur] || '';
+    $('gInputLabel').textContent = { name: 'Full name', role: 'Company / role (optional)', link: 'LinkedIn URL', note: 'Context notes (optional)', review: 'Their name (edit if wrong)' }[cur] || '';
     $('chatInput').value = $(f).value;
     $('chatInput').placeholder = $('gInputLabel').textContent;
   }
@@ -1162,7 +1154,7 @@ function renderG() {
   $('chatInput').style.minHeight = cur === 'note' ? '140px' : '52px';
   $('gMetWrap').style.display = cur === 'role' ? 'block' : 'none';
   $('gMetInput').value = $('fMet').value;
-  $('gLinkTools').style.display = (cur === 'link' && (!gPick || gPick === 'url')) ? 'flex' : 'none';
+  $('gLinkTools').style.display = cur === 'link' ? 'flex' : 'none';
   $('chatExtras').style.display = (cur === 'link' || cur === 'review') ? 'block' : 'none';
   $('recBtn').style.display = cur === 'note' ? 'grid' : 'none';
   $('recState').style.display = cur === 'note' ? '' : 'none';
@@ -1172,17 +1164,13 @@ function renderG() {
   $('gContinue').textContent = cur === 'note' ? 'Save and assess' : cur === 'review' ? 'Looks right, continue' : 'Continue';
   $('gContinue').style.display = isChoice ? 'none' : 'inline-flex';
   $('chatHint').textContent = cur === 'note' ? 'Enter to save; Shift+Enter for a new line' : 'Enter to continue';
-  // auto-launch the picked capture tool once we land on the link step
-  if (cur === 'link') {
-    if (!gLinkLaunched) { gLinkLaunched = true; if (gPick === 'qr') scanQR(); else if (gPick === 'card') $('cardFile').click(); }
-  } else gLinkLaunched = false;
   $('chatInput').focus();
 }
 function gReset() {
   stopQR();
   [profPoll, ocrPoll, researchPoll].forEach(p => { if (p) clearInterval(p); });
   profPoll = ocrPoll = researchPoll = null;
-  gStep = 0; gMode = null; gPick = null; gLinkLaunched = false; REL = null; researchState = ''; waitingAssessment = false;
+  gStep = 0; gMode = null; REL = null; researchState = ''; waitingAssessment = false;
   ['fName','fRole','fEmail','fPhone','fLinkedin','fNote','fMet'].forEach(id => $(id).value = '');
   PROFCARD = null; cardDataUrl = null; recB64 = null;
   $('profileCardBox').style.display = 'none';
