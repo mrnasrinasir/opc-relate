@@ -318,7 +318,7 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // ---- insight deck jobs (queued for the QwenWork agent to generate a PDF intro deck) ----
+    // ---- insight decks: generated instantly via Exa, stored as a structured HTML deck ----
     if (p === '/api/deck' && req.method === 'GET') {
       // ?all=1 returns every job (for the app's relationship cards); default: queued only (worker)
       if (url.searchParams.get('all') === '1') {
@@ -335,8 +335,55 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/deck' && req.method === 'POST') {
       const { relationship_id, name, context } = await readBody(req);
       if (!name) return json(res, 400, { error: 'name required' });
-      const rows = await sb('POST', 'deck_jobs', { body: { relationship_id: relationship_id || null, name, context: context || null } });
-      return json(res, 201, { id: rows[0].id, status: rows[0].status });
+      const s = await getSettings();
+      if (!s.exa_key) return json(res, 400, { error: 'an Exa key is required — add it in Settings for instant deck generation' });
+      // everything the generator needs: their pulled profile card + your profile + conversation context
+      const ctx = context || {};
+      const theirCard = ctx.profile_card || {};
+      const you = ctx.user_profile || {};
+      const prompt = `Write the content for a professional intro deck from ${you.name || 'the sender'} to ${name}.`;
+      const grounding = `Sender profile: ${JSON.stringify({ name: you.name, role: you.role, offer: you.offer, looking: you.looking })}
+Their profile card: ${JSON.stringify({ headline: theirCard.headline, role: theirCard.role, about: theirCard.about, company: theirCard.company, research: theirCard.research })}
+Conversation context: ${(ctx.note || '').slice(0, 400)} ${(ctx.met_context || '')}
+What the sender wants: ${(ctx.contact && ctx.contact.want) || ''}`;
+      try {
+        const r = await fetch('https://api.exa.ai/answer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': s.exa_key },
+          body: JSON.stringify({
+            query: prompt,
+            systemPrompt: `${grounding}\nUse only the provided data. Tone: warm, professional, concrete — no fluff, no invented facts. Each bullet max 18 words.`,
+            model: 'exa-fast',
+            outputSchema: {
+              type: 'object',
+              properties: {
+                why_connect: { type: 'array', items: { type: 'string' } },
+                opportunities: { type: 'array', items: { type: 'string' } },
+                value: { type: 'array', items: { type: 'string' } },
+                next_step: { type: 'string' }
+              },
+              required: ['why_connect', 'opportunities', 'value', 'next_step']
+            }
+          })
+        });
+        if (!r.ok) return json(res, 502, { error: 'exa answer failed: ' + (await r.text()).slice(0, 150) });
+        const d = await r.json();
+        let a = d.answer;
+        if (typeof a === 'string') { const m = a.match(/\{[\s\S]*\}/); a = m ? JSON.parse(m[0]) : null; }
+        if (!a || !Array.isArray(a.why_connect)) return json(res, 502, { error: 'exa returned no deck content' });
+        const deck = {
+          sections: {
+            role: theirCard.headline || theirCard.role || '',
+            why_connect: a.why_connect.slice(0, 5),
+            opportunities: (a.opportunities || []).slice(0, 5),
+            value: (a.value || []).slice(0, 4),
+            next_step: a.next_step || ''
+          },
+          sources_note: 'Drafted instantly via Exa from your captured profile and notes — review before sharing.'
+        };
+        const rows = await sb('POST', 'deck_jobs', { body: { relationship_id: relationship_id || null, name, context: ctx.note ? String(ctx.note).slice(0, 500) : null, status: 'done', deck } });
+        return json(res, 201, { id: rows[0].id, status: 'done', mode: 'exa' });
+      } catch (e) { return json(res, 500, { error: 'deck generation failed: ' + e.message }); }
     }
     const dk = p.match(/^\/api\/deck\/([0-9a-f-]{36})(\/pdf|\/accept)?$/i);
     if (dk) {
