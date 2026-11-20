@@ -1827,7 +1827,6 @@ async function saveConversation() {
       const ui = recUI(); ui.audio.style.display = 'none'; ui.state.textContent = '';
     }
      $('cName').textContent = REL.name.split(' ')[0];
-     $('dName').textContent = REL.name.split(' ')[0];
      $('loadTitle').textContent = 'Profile saved';
     $('loadActions').style.display = 'flex';
     $('loadSub').textContent = PROFCARD
@@ -1982,7 +1981,6 @@ async function loadAndShow() {
         el.onclick = () => {
           REL = r;
           $('cName').textContent = r.name.split(' ')[0];
-          $('dName').textContent = r.name.split(' ')[0];
           renderResearch(); renderTimeline(); renderContact(); renderBrief(); renderFollowup(); renderCard(); renderNextAction(); renderAssessment();
           go(2);
         };
