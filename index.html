@@ -502,22 +502,20 @@ async function loadProfile() {
   if (!PROFILE) openProfile(); // first visit: guided setup
 }
 
-// guided onboarding: method → identity → photo → fast pull & review
+// simple onboarding: paste your LinkedIn URL → instant pull → review & save
 let pwStep = 0;
-const pwDraft = { method: '', name: '', role: '', offer: '', looking: '', tone: '', linkedin_url: '', linkedin_card: null, photo: '' };
+const pwDraft = { method: 'linkedin', name: '', role: '', offer: '', looking: '', tone: '', linkedin_url: '', linkedin_card: null, photo: '' };
 const PW_TITLES = [
-  ['How do you want to set up?', 'Start from your LinkedIn, or type it in yourself.'],
-  ['Who are you?', 'The basics the agent needs to draft for you.'],
-  ['Your photo', 'Shown on decks you share. Upload an image or use your camera.'],
-  ['Fast pull & review', 'We pull your public profile data — you check it before anything is saved.']
+  ['Your LinkedIn profile', 'Paste your profile link — we pull your public data instantly and you review it.'],
+  ['Review & save', 'Pulled from your public LinkedIn profile. Correct anything, then finish.']
 ];
 
 function openProfile() {
   if (PROFILE) {
-    Object.assign(pwDraft, { method: 'manual', name: PROFILE.name, role: PROFILE.role || '', offer: PROFILE.offer || '',
+    Object.assign(pwDraft, { name: PROFILE.name, role: PROFILE.role || '', offer: PROFILE.offer || '',
       looking: PROFILE.looking || '', tone: PROFILE.tone || '', linkedin_url: PROFILE.linkedin_url || '',
       linkedin_card: PROFILE.linkedin_card || null, photo: PROFILE.photo || '' });
-    pwStep = 3; // editing: land on the review step
+    pwStep = PROFILE.linkedin_url || PROFILE.linkedin_card ? 1 : 0; // editing: review what's stored
   } else {
     pwStep = 0;
   }
@@ -526,7 +524,7 @@ function openProfile() {
   $('pwSkip').style.display = PROFILE ? 'none' : 'inline-flex';
 }
 
-function closeProfile() { stopPwQR(); stopPwCamera(); $('profileModal').style.display = 'none'; }
+function closeProfile() { $('profileModal').style.display = 'none'; }
 
 // ---- settings: integration keys stored server-side, submitted over HTTPS ----
 async function openSettings() {
@@ -576,245 +574,58 @@ async function saveSettings() {
 }
 
 function renderPw() {
-  const [title, sub] = PW_TITLES[Math.min(pwStep, 3)];
+  const [title, sub] = PW_TITLES[Math.min(pwStep, 1)];
   $('pwTitle').textContent = title;
   $('pwSub').textContent = sub;
-  $('pwDots').innerHTML = [0, 1, 2, 3].map(i => `<span class="pdt ${i < pwStep ? 'done' : i === pwStep ? 'on' : ''}"></span>`).join('');
+  $('pwDots').innerHTML = [0, 1].map(i => `<span class="pdt ${i < pwStep ? 'done' : i === pwStep ? 'on' : ''}"></span>`).join('');
   const skip = $('pwSkip');
   if (pwStep > 0) { skip.textContent = '← Back'; skip.onclick = () => { pwStep--; renderPw(); }; skip.style.display = 'inline-flex'; }
-  else { skip.textContent = PROFILE ? 'Close' : 'Skip for now'; skip.onclick = closeProfile; skip.style.display = PROFILE ? 'inline-flex' : 'inline-flex'; }
+  else { skip.textContent = PROFILE ? 'Close' : 'Skip for now'; skip.onclick = closeProfile; skip.style.display = 'inline-flex'; }
   const body = $('pwBody');
-  stopPwQR(); stopPwCamera();
   body.innerHTML = '';
   const nextBtn = $('pwNext');
   nextBtn.style.display = 'inline-flex';
 
   if (pwStep === 0) {
-    // fast onboarding: scan LinkedIn QR / upload photo / paste URL / manual
+    // one question: your LinkedIn profile URL
     body.innerHTML = `
-      <div style="display:grid; gap:12px; margin-top:6px">
-        <div onclick="pwScanQR()" style="background:var(--bg2); border:1px solid var(--line); border-radius:14px; padding:18px; cursor:pointer; transition:all .15s">
-          <b style="font-size:15px">⌗ Scan your LinkedIn QR <span class="tag verified" style="font-size:10.5px;margin-left:6px">FASTEST</span></b>
-          <div style="font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5">Point your camera at the QR code in the LinkedIn app — we pull your profile instantly.</div>
-        </div>
-        <div onclick="$('pwScanFile').click()" style="background:var(--bg2); border:1px solid var(--line); border-radius:14px; padding:18px; cursor:pointer; transition:all .15s">
-          <b style="font-size:15px">⬆ Upload a photo</b>
-          <div style="font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5">A screenshot of your LinkedIn QR, or your business card — we read the link from it.</div>
-        </div>
-        <div onclick="pwChoose('linkedin')" style="background:var(--bg2); border:1px solid var(--line); border-radius:14px; padding:18px; cursor:pointer; transition:all .15s">
-          <b style="font-size:15px">🔗 Paste LinkedIn URL</b>
-          <div style="font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5">Copy your profile link straight from LinkedIn.</div>
-        </div>
-        <div onclick="pwChoose('manual')" style="background:var(--bg2); border:1px solid var(--line); border-radius:14px; padding:18px; cursor:pointer; transition:all .15s">
-          <b style="font-size:15px">✎ Fill in manually</b>
-          <div style="font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5">Type your name and role — nothing is fetched.</div>
-        </div>
-      </div>
-      <input type="file" id="pwScanFile" accept="image/*" style="display:none" onchange="pwPhotoScan(this)">
-      <video id="pwQrVideo" playsinline style="display:none; width:100%; max-width:320px; border-radius:12px; margin:14px auto 0; border:1px solid var(--line)"></video>
-      <div id="pwScanState" style="font-size:12.5px;color:var(--muted);margin-top:8px"></div>
-      ${pwDraft.linkedin_url ? `<div style="font-size:12px;color:var(--ok);margin-top:6px">✓ LinkedIn captured: ${pwDraft.linkedin_url}</div>` : ''}`;
-    nextBtn.style.display = pwDraft.linkedin_url ? 'inline-flex' : 'none';
-    nextBtn.textContent = 'Continue →';
+      <label>Your LinkedIn profile URL</label>
+      <input type="text" id="pw_linkedin_url" value="${(pwDraft.linkedin_url || '').replace(/"/g, '&quot;')}" placeholder="https://www.linkedin.com/in/you" autofocus
+             onkeydown="if(event.key==='Enter'){event.preventDefault();pwAdvance()}">
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">We pull your public profile instantly — nothing is shared, nothing is posted.</div>
+      <div style="margin-top:14px"><a href="javascript:void(0)" style="font-size:12.5px;color:var(--muted);text-decoration:underline" onclick="pwManual()">No LinkedIn? Set up manually instead</a></div>`;
+    nextBtn.textContent = 'Pull my profile →';
+    const first = body.querySelector('input'); if (first) first.focus();
     return;
   }
 
-  if (pwStep === 1) {
-    if (pwDraft.method === 'linkedin') {
-      body.innerHTML = `
-        <label>Your LinkedIn profile URL</label>
-        <input type="text" id="pw_linkedin_url" value="${(pwDraft.linkedin_url || '').replace(/"/g, '&quot;')}" placeholder="https://www.linkedin.com/in/you" autofocus>
-        <div style="font-size:12px;color:var(--muted);margin-top:6px">Double-check the handle — a typo is the #1 cause of failed pulls.</div>`;
-    } else {
-      body.innerHTML = `
-        <label>Your name</label>
-        <input type="text" id="pw_name" value="${(pwDraft.name || '').replace(/"/g, '&quot;')}" placeholder="e.g. Nasri Nasir" autofocus>
-        <label style="margin-top:10px">What do you do?</label>
-        <input type="text" id="pw_role" value="${(pwDraft.role || '').replace(/"/g, '&quot;')}" placeholder="e.g. Consultant — Notion systems and AI training">`;
-    }
-  }
-
-  if (pwStep === 2) {
-    // photo: upload or camera
-    body.innerHTML = `
-      <div style="display:flex; justify-content:center; margin:10px 0 16px">
-        <img id="pwPhotoPreview" src="${pwDraft.photo || (pwDraft.linkedin_card && pwDraft.linkedin_card.photo) || ''}"
-             style="width:110px;height:110px;border-radius:50%;object-fit:cover;border:2px solid var(--line);${(pwDraft.photo || (pwDraft.linkedin_card && pwDraft.linkedin_card.photo)) ? '' : 'display:none'}" alt="">
-      </div>
-      <div class="actions" style="justify-content:center">
-        <button class="btn ghost small" onclick="$('pwPhotoFile').click()">⬆ Upload image</button>
-        <button class="btn ghost small" onclick="startPwCamera()">📷 Use camera</button>
-        ${pwDraft.photo ? '<button class="btn ghost small" style="color:#ff7a90;border-color:#4a2733" onclick="pwDraft.photo=\'\';renderPw()">Remove</button>' : ''}
-      </div>
-      <input type="file" id="pwPhotoFile" accept="image/*" style="display:none" onchange="pwPhotoChosen(this)">
-      <video id="pwCam" playsinline style="display:none; width:100%; max-width:320px; border-radius:12px; margin:12px auto 0; border:1px solid var(--line)"></video>
-      <div id="pwCamBar" class="actions" style="display:none; justify-content:center; margin-top:10px">
-        <button class="btn primary small" onclick="pwCapturePhoto()">Capture</button>
-        <button class="btn ghost small" onclick="stopPwCamera()">Cancel</button>
-      </div>
-      <div style="font-size:12px;color:var(--muted);text-align:center;margin-top:10px">Optional — you can add it later from your avatar. ${pwDraft.linkedin_card && pwDraft.linkedin_card.photo && !pwDraft.photo ? 'Your LinkedIn photo will be used until you set your own.' : ''}</div>`;
-  }
-
-  if (pwStep === 3) {
-    // fast pull & review
-    const hasCard = !!pwDraft.linkedin_card;
-    body.innerHTML = `
-      <div id="pwPullBox" style="background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:14px">
-        ${pwDraft.method === 'linkedin' ? `<div id="pwLinkStatus" style="font-size:13px;color:var(--muted)">Ready to pull your public LinkedIn data…</div>` : '<div style="font-size:13px;color:var(--muted)">Manual setup — no data pulled. Your typed details below are all the agent knows.</div>'}
-      </div>
-      <label>Your name</label>
-      <input type="text" id="pw_name" value="${(pwDraft.name || '').replace(/"/g, '&quot;')}" placeholder="e.g. Nasri Nasir">
-      <label style="margin-top:10px">What do you do?</label>
-      <input type="text" id="pw_role" value="${(pwDraft.role || '').replace(/"/g, '&quot;')}" placeholder="Your role / headline">
-      <label style="margin-top:10px">Your services / offer</label>
-      <input type="text" id="pw_offer" value="${(pwDraft.offer || '').replace(/"/g, '&quot;')}" placeholder="What you can offer relationships">
-      <label style="margin-top:10px">Looking for…</label>
-      <input type="text" id="pw_looking" value="${(pwDraft.looking || '').replace(/"/g, '&quot;')}" placeholder="People and opportunities you want">`;
-    nextBtn.textContent = 'Finish setup ✓';
-    if (pwDraft.method === 'linkedin' && !hasCard) pullOwnProfile();
-    return;
-  }
-
-  nextBtn.textContent = pwStep === 2 ? 'Continue →' : 'Next →';
+  // step 1 — instant pull & review
+  const hasCard = !!pwDraft.linkedin_card;
+  body.innerHTML = `
+    <div id="pwPullBox" style="background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:14px">
+      ${pwDraft.linkedin_url
+        ? `<div id="pwLinkStatus" style="font-size:13px;color:var(--muted)">${hasCard ? '✓ Pulled from your public LinkedIn profile' : 'Pulling your public profile…'}</div>`
+        : '<div style="font-size:13px;color:var(--muted)">Manual setup — your typed details below are all the agent knows.</div>'}
+    </div>
+    <label>Your name</label>
+    <input type="text" id="pw_name" value="${(pwDraft.name || '').replace(/"/g, '&quot;')}" placeholder="e.g. Nasri Nasir">
+    <label style="margin-top:10px">What do you do?</label>
+    <input type="text" id="pw_role" value="${(pwDraft.role || '').replace(/"/g, '&quot;')}" placeholder="Your role / headline">
+    <label style="margin-top:10px">Your services / offer</label>
+    <input type="text" id="pw_offer" value="${(pwDraft.offer || '').replace(/"/g, '&quot;')}" placeholder="What you can offer relationships">
+    <label style="margin-top:10px">Looking for…</label>
+    <input type="text" id="pw_looking" value="${(pwDraft.looking || '').replace(/"/g, '&quot;')}" placeholder="People and opportunities you want">`;
+  nextBtn.textContent = 'Finish setup ✓';
+  if (pwDraft.linkedin_url && !hasCard) pullOwnProfile();
   const first = body.querySelector('input'); if (first) first.focus();
 }
 
-function pwChoose(method) {
-  pwDraft.method = method;
+function pwManual() {
+  pwDraft.method = 'manual';
+  pwDraft.linkedin_url = '';
+  pwDraft.linkedin_card = null;
   pwStep = 1;
   renderPw();
-}
-
-// ---- fast onboarding: QR scan / photo decode in the wizard ----
-let pwQrStream = null, pwQrLoop = null;
-
-function pwQRFound(payload) {
-  const m = String(payload || '').match(/https?:\/\/(www\.)?linkedin\.com\/[^\s"']+/i);
-  if (!m) { $('pwScanState').textContent = 'That QR code is not a LinkedIn profile — try your LinkedIn QR, or paste the URL'; return false; }
-  stopPwQR();
-  pwDraft.method = 'linkedin';
-  pwDraft.linkedin_url = m[0].split('?')[0];
-  toast('LinkedIn captured from QR');
-  pwStep = 1;
-  renderPw();
-  return true;
-}
-
-async function pwScanQR() {
-  if (!('BarcodeDetector' in window)) { $('pwScanFile').click(); return; }
-  const state = $('pwScanState');
-  try {
-    pwQrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    const v = $('pwQrVideo');
-    v.srcObject = pwQrStream; v.style.display = 'block';
-    state.textContent = '⌗ scanning — point at your LinkedIn QR code…';
-    const det = new BarcodeDetector();
-    pwQrLoop = setInterval(async () => {
-      try {
-        const codes = await det.detect(v);
-        if (codes.length) pwQRFound(codes[0].rawValue);
-      } catch (e) { /* frame not ready */ }
-    }, 600);
-  } catch (e) { state.textContent = 'Camera unavailable — upload a photo of the QR instead'; $('pwScanFile').click(); }
-}
-
-function stopPwQR() {
-  if (pwQrLoop) { clearInterval(pwQrLoop); pwQrLoop = null; }
-  if (pwQrStream) { pwQrStream.getTracks().forEach(t => t.stop()); pwQrStream = null; }
-  const v = $('pwQrVideo');
-  if (v) { v.style.display = 'none'; v.srcObject = null; }
-}
-
-function pwPhotoScan(input) {
-  const file = input.files && input.files[0];
-  if (!file) return;
-  const state = $('pwScanState');
-  state.textContent = '⬆ reading the image…';
-  const img = new Image();
-  img.onload = () => {
-    const cv = document.createElement('canvas');
-    cv.width = img.width; cv.height = img.height;
-    cv.getContext('2d').drawImage(img, 0, 0);
-    const data = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
-    // 1) try QR decode
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
-    s.onload = () => {
-      const code = window.jsQR && window.jsQR(data.data, data.width, data.height);
-      if (code && pwQRFound(code.data)) return;
-      // 2) no QR — OCR the image for a linkedin URL (business card / screenshot)
-      pwOcrForLinkedIn(cv, state);
-    };
-    s.onerror = () => pwOcrForLinkedIn(cv, state);
-    document.head.appendChild(s);
-  };
-  img.onerror = () => { state.textContent = 'Could not read that image'; };
-  img.src = URL.createObjectURL(file);
-}
-
-function pwOcrForLinkedIn(cv, state) {
-  state.textContent = '⌗ reading text from the image…';
-  const s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-  s.onload = async () => {
-    try {
-      const { data } = await Tesseract.recognize(cv, 'eng');
-      const m = (data.text || '').match(/linkedin\.com\/in\/[A-Za-z0-9\-_%]+/i);
-      if (m) { pwQRFound('https://' + m[0]); return; }
-      state.textContent = 'No LinkedIn link found in that image — try the LinkedIn QR, paste the URL, or set up manually';
-    } catch (e) { state.textContent = 'Could not read the image — paste your LinkedIn URL instead'; }
-  };
-  s.onerror = () => { state.textContent = 'OCR library failed to load — paste your LinkedIn URL instead'; };
-  document.head.appendChild(s);
-}
-
-// ---- photo: upload or camera, downscaled to a small data URL ----
-function pwPhotoChosen(input) {
-  const file = input.files && input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => pwSetPhoto(reader.result);
-  reader.readAsDataURL(file);
-}
-let pwCamStream = null;
-async function startPwCamera() {
-  try {
-    pwCamStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640 } });
-    const v = $('pwCam');
-    v.srcObject = pwCamStream;
-    v.style.display = 'block';
-    $('pwCamBar').style.display = 'flex';
-  } catch (e) { toast('Camera unavailable — use Upload instead'); }
-}
-function stopPwCamera() {
-  if (pwCamStream) { pwCamStream.getTracks().forEach(t => t.stop()); pwCamStream = null; }
-  const v = $('pwCam');
-  if (v) { v.style.display = 'none'; v.srcObject = null; }
-  const bar = $('pwCamBar');
-  if (bar) bar.style.display = 'none';
-}
-function pwCapturePhoto() {
-  const v = $('pwCam');
-  if (!v || !v.videoWidth) { toast('Camera not ready'); return; }
-  const c = document.createElement('canvas');
-  c.width = 256; c.height = 256;
-  const side = Math.min(v.videoWidth, v.videoHeight);
-  c.getContext('2d').drawImage(v, (v.videoWidth - side) / 2, (v.videoHeight - side) / 2, side, side, 0, 0, 256, 256);
-  pwSetPhoto(c.toDataURL('image/jpeg', 0.85));
-  stopPwCamera();
-}
-function pwSetPhoto(dataUrl) {
-  const img = new Image();
-  img.onload = () => {
-    const c = document.createElement('canvas');
-    c.width = 256; c.height = 256;
-    const side = Math.min(img.width, img.height);
-    c.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 256, 256);
-    pwDraft.photo = c.toDataURL('image/jpeg', 0.85);
-    renderPw();
-    toast('Photo set');
-  };
-  img.src = dataUrl;
 }
 
 async function pullOwnProfile() {
@@ -861,27 +672,20 @@ function applyPullToReview(status, card) {
 }
 
 async function pwAdvance() {
-  if (pwStep === 1) {
-    if (pwDraft.method === 'linkedin') {
-      const url = ($('pw_linkedin_url') || {}).value || '';
-      if (!url.trim() || !/linkedin\.com/i.test(url)) { toast('Paste your LinkedIn profile URL — or choose manual'); return; }
-      pwDraft.linkedin_url = url.trim();
-    } else {
-      const n = ($('pw_name') || {}).value || '';
-      if (!n.trim()) { toast('A name is the one thing we need'); return; }
-      pwDraft.name = n.trim();
-      pwDraft.role = (($('pw_role') || {}).value || '').trim();
-    }
+  if (pwStep === 0) {
+    const url = ($('pw_linkedin_url') || {}).value || '';
+    if (!url.trim() || !/linkedin\.com/i.test(url)) { toast('Paste your LinkedIn profile URL — or set up manually'); return; }
+    pwDraft.linkedin_url = url.trim();
+    pwDraft.method = 'linkedin';
+    pwStep = 1;
+    renderPw();
+    return;
   }
-  if (pwStep === 3) {
-    pwDraft.name = (($('pw_name') || {}).value || '').trim();
-    pwDraft.role = (($('pw_role') || {}).value || '').trim();
-    pwDraft.offer = (($('pw_offer') || {}).value || '').trim();
-    pwDraft.looking = (($('pw_looking') || {}).value || '').trim();
-    if (!pwDraft.name) { toast('A name is the one thing we need'); return; }
-  }
-  pwStep++;
-  if (pwStep <= 3) { renderPw(); return; }
+  pwDraft.name = (($('pw_name') || {}).value || '').trim();
+  pwDraft.role = (($('pw_role') || {}).value || '').trim();
+  pwDraft.offer = (($('pw_offer') || {}).value || '').trim();
+  pwDraft.looking = (($('pw_looking') || {}).value || '').trim();
+  if (!pwDraft.name) { toast('A name is the one thing we need'); return; }
   // save
   try {
     const body = { ...pwDraft };
@@ -894,7 +698,7 @@ async function pwAdvance() {
     closeProfile();
     renderBrief(); renderFollowup();
     toast(`Welcome, ${me()} — the agent now drafts with your context`);
-  } catch (e) { toast('Could not save your profile — try again'); pwStep--; renderPw(); }
+  } catch (e) { toast('Could not save your profile — try again'); }
 }
 loadProfile();
 
@@ -1830,7 +1634,7 @@ async function saveConversation() {
   $('loadScreen').querySelector('.spinner').style.display = 'block';
   $('loadActions').style.display = 'none';
   $('loadTitle').textContent = 'Saving relationship';
-  $('loadSub').textContent = 'Waiting for the server to confirm the save.';
+  $('loadSub').textContent = 'Saving the relationship and profile card.';
   try {
     REL = await api('/api/relationships', {
       method: 'POST',
@@ -1865,7 +1669,9 @@ async function saveConversation() {
     $('bSub').textContent = `From conversation · ${REL.met_context}. Check and correct anything before it informs next steps.`;
     $('loadTitle').textContent = 'Relationship saved';
     $('loadActions').style.display = 'flex';
-    $('loadSub').textContent = 'Submitting the research request. You can view the pending assessment or return to the workspace.';
+    $('loadSub').textContent = PROFCARD
+      ? 'Profile card pulled via Apify and stored with the relationship. Research is optional — run it from the assessment screen any time.'
+      : 'Relationship stored. Research is optional — run it from the assessment screen any time.';
     renderResearch();
     renderTimeline();
     renderContact();
@@ -1876,7 +1682,7 @@ async function saveConversation() {
     renderAssessment();
     renderDeckStrip();
     if (REL.assessment) { leaveProcessing(2); }
-    else { await queueResearch(true); }
+    else { leaveProcessing(0); } // saved with the profile card — no assessment needed first
   } catch (e) {
     waitingAssessment = false;
     $('loadScreen').style.display = 'none';
