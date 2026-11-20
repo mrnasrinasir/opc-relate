@@ -1078,6 +1078,7 @@ function handleAnswer(v) {
 }
 function gBack() {
   if (mediaRec && mediaRec.state === 'recording') { toast('Stop recording before going back'); return; }
+  if (gStep === 0 && !gMode) { stopQR(); go(0); return; } // first step: exit capture, back to workspace
   gSync(); stopQR();
   if (gCur() === 'pick') gMode = null;      // pick → method choice
   if (gCur() === 'link') gPick = null;      // link → pick
@@ -1135,7 +1136,7 @@ function renderG() {
   $('recBtn').style.display = cur === 'note' ? 'grid' : 'none';
   $('recState').style.display = cur === 'note' ? '' : 'none';
   $('recPreview').style.display = cur === 'note' && recB64 ? 'block' : 'none';
-  $('gBack').disabled = gStep === 0 && !gMode;
+  $('gBack').disabled = false;
   $('gSkip').style.display = (cur === 'role' || cur === 'link' || cur === 'note') ? 'inline-flex' : 'none';
   $('gContinue').textContent = cur === 'note' ? 'Save and assess' : cur === 'review' ? 'Looks right, continue' : 'Continue';
   $('gContinue').style.display = isChoice ? 'none' : 'inline-flex';
