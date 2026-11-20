@@ -667,6 +667,47 @@ function pick(i){
       return res.end(html);
     }
 
+    // ---- next steps: instant draft email + LinkedIn message via Exa (user sends everything themselves) ----
+    if (p === '/api/nextsteps' && req.method === 'POST') {
+      const { relationship_id, name, context } = await readBody(req);
+      if (!name) return json(res, 400, { error: 'name required' });
+      const s = await getSettings();
+      if (!s.exa_key) return json(res, 400, { error: 'an Exa key is required — add it in Settings to draft next steps' });
+      const ctx = context || {};
+      const theirCard = ctx.profile_card || {};
+      const you = ctx.user_profile || {};
+      const grounding = `Recipient: ${JSON.stringify({ name, headline: theirCard.headline, role: theirCard.role, company: theirCard.company })}
+Sender: ${JSON.stringify({ name: you.name, role: you.role, offer: you.offer, looking: you.looking })}
+How they met / conversation: ${(ctx.note || '').slice(0, 400)} ${ctx.met_context || ''}
+What the sender wants: ${(ctx.contact && ctx.contact.want) || ''}`;
+      try {
+        const r = await fetch('https://api.exa.ai/answer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': s.exa_key },
+          body: JSON.stringify({
+            query: `Draft a follow-up email and a short LinkedIn message from ${you.name || 'the sender'} to ${name} after their first meeting.`,
+            systemPrompt: `${grounding}\nUse only the provided data. Warm, concrete, short — no fluff, no invented facts. Email body max 120 words. LinkedIn message max 60 words, casual-professional. Sign with the sender's name.`,
+            model: 'exa-fast',
+            outputSchema: {
+              type: 'object',
+              properties: {
+                email_subject: { type: 'string' },
+                email_body: { type: 'string' },
+                linkedin_message: { type: 'string' }
+              },
+              required: ['email_subject', 'email_body', 'linkedin_message']
+            }
+          })
+        });
+        if (!r.ok) return json(res, 502, { error: 'exa answer failed: ' + (await r.text()).slice(0, 150) });
+        const d = await r.json();
+        let a = d.answer;
+        if (typeof a === 'string') { const m = a.match(/\{[\s\S]*\}/); a = m ? JSON.parse(m[0]) : null; }
+        if (!a || !a.email_body) return json(res, 502, { error: 'exa returned no drafts' });
+        return json(res, 200, { email_subject: a.email_subject || '', email_body: a.email_body, linkedin_message: a.linkedin_message || '' });
+      } catch (e) { return json(res, 500, { error: 'drafting failed: ' + e.message }); }
+    }
+
     // ---- research jobs (queued for the QwenWork agent to run real web searches) ----
     if (p === '/api/research' && req.method === 'GET') {
       const rows = await sb('GET', 'research_jobs', {
