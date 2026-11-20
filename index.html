@@ -934,11 +934,30 @@ async function renderTalk() {
     '<button class="btn primary" onclick="copyTalkLink(\'' + link + '\')">Copy share link</button>' +
     '<a class="btn ghost" href="/talk/' + jobId + '" target="_blank" style="text-decoration:none">Open the talk track</a>' +
     '<button class="btn primary" onclick="go(4)">Shared — continue</button>';
+  // inline preview of the shared page's content (no iframe — the gateway blocks embedded frames)
   const panel = $('talkPanel');
   let prev = $('talkPreview');
-  if (!prev) { prev = document.createElement('iframe'); prev.id = 'talkPreview'; panel.after(prev); }
-  prev.src = '/talk/' + jobId;
-  prev.style.cssText = 'width:100%;height:520px;border:1px solid var(--line);border-radius:12px;background:#0b0e14;margin-top:14px;resize:vertical';
+  if (!prev) { prev = document.createElement('div'); prev.id = 'talkPreview'; panel.after(prev); }
+  const topics = (job.track && job.track.topics) || [];
+  prev.className = 'panel';
+  prev.style.cssText = 'margin-top:14px';
+  prev.innerHTML = `
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <b style="font-size:16px">${REL.name}</b>
+      <span style="font-size:13px;color:var(--muted)">${job.track && job.track.role ? job.track.role : ''}</span>
+      <span style="margin-left:auto;font-size:11.5px;color:var(--muted)">preview of the shared page</span>
+    </div>
+    ${topics.map((t, i) => `
+      <div style="border:1px solid ${job.picked_topic === i ? 'rgba(110,231,160,.5)' : 'var(--line)'};border-radius:12px;padding:14px 18px;margin-top:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <b style="font-size:15px">${t.topic}</b>
+          ${job.picked_topic === i ? '<span class="vtag v-pursue" style="border:1px solid rgba(74,222,128,.5)">✓ their pick</span>'
+            : (job.picked_topic === null || job.picked_topic === undefined) ? '<span style="font-size:11.5px;color:var(--muted)">"Start here" on the shared page</span>' : ''}
+        </div>
+        <div style="font-size:12.5px;color:var(--muted);margin-top:4px">${t.why || ''}</div>
+        <ul class="clean" style="margin-top:8px">${(t.questions || []).map(q => `<li>${q}</li>`).join('')}</ul>
+        ${t.bring ? `<div style="font-size:13px;color:var(--accent);margin-top:6px">I can bring: ${t.bring}</div>` : ''}
+      </div>`).join('')}`;
 }
 
 function copyTalkLink(link) {
