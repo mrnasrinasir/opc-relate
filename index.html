@@ -359,7 +359,7 @@
     <input type="text" id="fPhone"><input type="text" id="fLinkedin"><input type="text" id="fMet" value="Founder event — Singapore">
     <textarea id="fNote"></textarea>
     <input type="file" id="cardFile" accept="image/*" capture="environment" onchange="ocrCard(this)">
-    <input type="file" id="qrFile" accept="image/*" onchange="qrFromFile(this)">
+    <input type="file" id="qrFile" accept="image/*" capture="environment" onchange="qrFromFile(this)">
     <button id="btnSave" onclick="saveConversation()">go</button>
   </div>
 </section>
@@ -1212,20 +1212,41 @@ function handleQRPayload(text) {
 }
 
 async function scanQR() {
-  if (!('BarcodeDetector' in window)) { $('qrFile').click(); return; }
+  let qrStateText = '⌗ scanning — point at the QR code…';
+  $('qrState').textContent = '⌗ opening camera…';
   try {
     qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     const v = $('qrVideo');
-    v.srcObject = qrStream; v.style.display = 'block';
-    $('qrState').textContent = '⌗ scanning — point at the QR code…';
-    const det = new BarcodeDetector();
-    qrLoop = setInterval(async () => {
-      try {
-        const codes = await det.detect(v);
-        if (codes.length) handleQRPayload(codes[0].rawValue);
-      } catch (e) { /* frame not ready */ }
-    }, 600);
-  } catch (e) { $('qrFile').click(); }
+    v.srcObject = qrStream; v.style.display = 'block'; v.setAttribute('playsinline', ''); v.play().catch(() => {});
+    $('qrState').textContent = qrStateText;
+    if ('BarcodeDetector' in window) {
+      const det = new BarcodeDetector();
+      qrLoop = setInterval(async () => {
+        try {
+          const codes = await det.detect(v);
+          if (codes.length) handleQRPayload(codes[0].rawValue);
+        } catch (e) { /* frame not ready */ }
+      }, 600);
+    } else {
+      // mobile fallback (iOS Safari etc.): decode camera frames with jsQR
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+      s.onload = () => {
+        const cv = document.createElement('canvas');
+        qrLoop = setInterval(() => {
+          if (!v.videoWidth) return;
+          cv.width = v.videoWidth; cv.height = v.videoHeight;
+          const ctx = cv.getContext('2d');
+          ctx.drawImage(v, 0, 0);
+          const data = ctx.getImageData(0, 0, cv.width, cv.height);
+          const code = window.jsQR && window.jsQR(data.data, data.width, data.height);
+          if (code && code.data) handleQRPayload(code.data);
+        }, 600);
+      };
+      s.onerror = () => { $('qrState').textContent = 'Scanner failed to load — upload a photo of the QR instead'; $('qrFile').click(); };
+      document.head.appendChild(s);
+    }
+  } catch (e) { $('qrState').textContent = 'Camera unavailable — upload a photo of the QR instead'; $('qrFile').click(); }
 }
 
 function stopQR() {
