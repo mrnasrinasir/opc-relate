@@ -1007,7 +1007,16 @@ function renderProfileHead() {
         ${pc.company ? `<div style="font-size:12.5px;color:var(--muted);margin-top:2px">🏢 ${pc.company}</div>` : ''}
       </div>
     </div>
-    ${pc.about ? `<div style="font-size:13px;color:#ccd5e4;line-height:1.55;margin-bottom:16px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:12px 16px">${String(pc.about).slice(0, 280)}${String(pc.about).length > 280 ? '…' : ''}</div>` : ''}`;
+    ${pc.about ? `<div style="font-size:13px;color:#ccd5e4;line-height:1.55;margin-bottom:16px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:12px 16px">${String(pc.about).slice(0, 280)}${String(pc.about).length > 280 ? '…' : ''}</div>` : ''}
+    ${pc.research && pc.research.length ? `
+      <div style="margin-bottom:16px">
+        <h2 style="font-size:14.5px;margin-bottom:8px">Research <span class="tag source">INSTANT VIA EXA</span></h2>
+        <ul class="clean">
+          ${pc.research.map(r => `<li>${r.finding} ${r.url
+            ? `<a href="${r.url}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent)">${r.source} ↗</a>`
+            : `<span style="font-size:12px;color:var(--muted)">${r.source}</span>`}</li>`).join('')}
+        </ul>
+      </div>` : ''}`;
 }
 
 function renderContact() {

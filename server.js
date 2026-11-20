@@ -188,6 +188,36 @@ const server = http.createServer(async (req, res) => {
         return { url: hit.url.split('?')[0], title: hit.title || null };
       } catch (e) { return { error: 'exa search failed: ' + e.message }; }
     }
+    // instant research via Exa answer: what they're known for, with cited sources
+    async function exaResearch(name, linkedinUrl) {
+      const s = await getSettings();
+      if (!s.exa_key || !name) return [];
+      try {
+        const r = await fetch('https://api.exa.ai/answer', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': s.exa_key },
+          body: JSON.stringify({
+            query: `What is ${name} known for professionally? Key projects, roles and public presence. Keep each point under 20 words. ${linkedinUrl ? `Their LinkedIn: ${linkedinUrl}.` : ''}`,
+            systemPrompt: 'Only verifiable public information. Omit anything uncertain.',
+            model: 'exa-fast',
+            outputSchema: { type: 'object', properties: { highlights: { type: 'array', items: { type: 'string' } } }, required: ['highlights'] }
+          })
+        });
+        if (!r.ok) return [];
+        const d = await r.json();
+        let a = d.answer;
+        if (typeof a === 'string') { const m = a.match(/\{[\s\S]*\}/); a = m ? JSON.parse(m[0]) : null; }
+        const cites = d.citations || [];
+        const highlights = (a && Array.isArray(a.highlights)) ? a.highlights : [];
+        return highlights.slice(0, 5).map((h, i) => ({
+          finding: String(h),
+          source: (cites[i] && (cites[i].title || cites[i].url)) || 'exa.ai',
+          url: (cites[i] && cites[i].url) || null,
+          status: 'sourced'
+        }));
+      } catch (e) { return []; }
+    }
+
     async function exaProfileCard(linkedinUrl, name) {
       const s = await getSettings();
       if (!s.exa_key) return { error: 'no exa key configured' };
@@ -261,6 +291,7 @@ const server = http.createServer(async (req, res) => {
         const result = await exaProfileCard(resolved, name || null);
         if (result.card) {
           const card = { ...result.card, source: 'exa: exa.ai/answer' };
+          card.research = await exaResearch(card.name || name, resolved); // instant, cited
           const rows = await sb('POST', 'profile_jobs', { body: { linkedin_url: resolved, name: name || card.name || null, status: 'done', card } });
           return json(res, 201, { id: rows[0].id, status: 'done', card, mode: 'exa', linkedin_url: resolved });
         }
