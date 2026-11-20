@@ -306,8 +306,7 @@
       <div id="gMetWrap" style="display:none"><label for="gMetInput">Where did you meet? (optional)</label><input type="text" id="gMetInput" oninput="$('fMet').value=this.value" onkeydown="if(event.key==='Enter'){event.preventDefault();gSend()}" placeholder="Event, referral, online..."></div>
       <div id="gLinkTools" class="actions" style="display:none; justify-content:center">
         <button class="btn ghost small" onclick="scanQR()">Scan QR code</button>
-        <button class="btn ghost small" onclick="$('cardFile').click()">Business card</button>
-        <button class="btn ghost small" onclick="gSync();pullProfile()">Read LinkedIn profile</button>
+        <button class="btn ghost small" onclick="$('cardFile').click()">Upload photo / business card</button>
       </div>
     </div>
 
@@ -1065,16 +1064,26 @@ function gCur() { return gPlan()[gStep] || 'note'; }
 function gSync() { const f = gFields[gCur()]; if (f && gCur() !== 'review') $(f).value = $('chatInput').value; }
 function gSend() { handleAnswer($('chatInput').value.trim()); }
 function gChoose(mode) { gMode = mode; gStep = 0; renderG(); }
-function handleAnswer(v) {
+async function handleAnswer(v) {
   if ($('btnSave').disabled) return;
   if (mediaRec && mediaRec.state === 'recording') { toast('Stop recording before continuing'); return; }
   const cur = gCur();
   if (cur === 'method') return; // choice step: use the buttons
   if ((cur === 'name' || cur === 'review') && !v) { toast('A name is required'); $('chatInput').focus(); return; }
-  if (cur === 'link' && v && !/^(https?:\/\/)?(www\.)?linkedin\.com\/in\/[^\s]+$/i.test(v)) {
-    toast('Enter a LinkedIn profile URL or skip this step'); return;
-  }
   const f = gFields[cur]; if (f) $(f).value = v;
+  if (cur === 'link') {
+    // URL or just a name — Continue processes it: search + pull, card lands in the review step
+    const isUrl = /^(https?:\/\/)?(www\.)?linkedin\.com\/in\//i.test(v);
+    if (isUrl) { $('fLinkedin').value = v; }
+    else if (v) { if (!$('fName').value.trim()) $('fName').value = v; $('fLinkedin').value = ''; }
+    if (v) {
+      await pullProfile();           // instant card via Exa → advances to review
+      if (gCur() !== 'link') return; // moved on to the review step
+    }
+    stopQR();
+    gStep++; renderG();
+    return;
+  }
   if (cur === 'note') { saveConversation(); return; }
   stopQR();
   gStep++; renderG();
@@ -1102,7 +1111,7 @@ function renderG() {
   $('gDots').innerHTML = plan.map((_, i) => `<span class="pdt ${i < gStep ? 'done' : i === gStep ? 'on' : ''}"></span>`).join('');
   $('gStage').textContent = `Step ${gStep + 1} of ${plan.length}`;
   const Q = { method: 'How do you want to add them?', name: 'Who did you meet?', role: 'What do they do?', link: 'Their LinkedIn profile', review: 'Does this look right?', note: 'What did you talk about?' };
-  const D = { method: 'Add them by hand, or pull their public details from LinkedIn.', name: 'Start with their name.', role: 'Add their company or role, and where you met if you remember.', link: 'Paste their link, scan their LinkedIn QR, or upload a business card — we pull the profile instantly.', review: 'We pulled their public profile — check the name and details before saving.', note: 'Add needs, promises, or useful context. You can also record a voice note.' };
+  const D = { method: 'Add them by hand, or pull their public details from LinkedIn.', name: 'Start with their name.', role: 'Add their company or role, and where you met if you remember.', link: 'Enter their LinkedIn URL or name and hit Continue — or scan their QR / upload a business card. We pull the profile and build the card.', review: 'Their profile card — check the name and details before saving. Assessment stays separate and optional.', note: 'Add needs, promises, or useful context. You can also record a voice note.' };
   $('gQuestion').textContent = Q[cur];
   $('gDescription').textContent = D[cur];
 
@@ -1134,7 +1143,7 @@ function renderG() {
   $('recPreview').style.display = cur === 'note' && recB64 ? 'block' : 'none';
   $('gBack').disabled = false;
   $('gSkip').style.display = (cur === 'role' || cur === 'link' || cur === 'note') ? 'inline-flex' : 'none';
-  $('gContinue').textContent = cur === 'note' ? 'Save and assess' : cur === 'review' ? 'Looks right, continue' : 'Continue';
+  $('gContinue').textContent = cur === 'note' ? 'Save profile' : cur === 'review' ? 'Looks right, continue' : cur === 'link' ? 'Pull their profile →' : 'Continue';
   $('gContinue').style.display = isChoice ? 'none' : 'inline-flex';
   $('chatHint').textContent = cur === 'note' ? 'Enter to save; Shift+Enter for a new line' : 'Enter to continue';
   $('chatInput').focus();
@@ -1230,19 +1239,21 @@ let PROFCARD = null, profJobId = null, profPoll = null;
 
 async function pullProfile() {
   const url = $('fLinkedin').value.trim();
-  if (!url || !/linkedin\.com/i.test(url)) { toast('Paste their LinkedIn profile URL first'); return; }
+  const name = $('fName').value.trim();
+  if (!url && !name) { toast('Enter their LinkedIn URL or name first'); return; }
   try {
     $('profileCardBox').style.display = 'block';
-    $('profileCardSrc').textContent = '⏳ pulling their LinkedIn profile…';
+    $('profileCardSrc').textContent = url ? '⏳ pulling their LinkedIn profile…' : '⏳ searching for their LinkedIn profile via Exa…';
     $('profileCardContent').textContent = '';
     const job = await api('/api/profilecard', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ linkedin_url: url, name: $('fName').value.trim() || null })
+      body: JSON.stringify({ linkedin_url: url || null, name: name || null })
     });
     profJobId = job.id;
     if (job.card && job.mode === 'exa') {
-      // Exa pulled it synchronously — instant card, no polling
-      PROFCARD = { ...job.card, source_url: url };
+      // Exa pulled it synchronously — instant card with image + details, no polling
+      PROFCARD = { ...job.card, source_url: job.linkedin_url || url };
+      if (job.linkedin_url) $('fLinkedin').value = job.linkedin_url;
       applyProfileCard(PROFCARD);
       $('profileCardSrc').textContent = 'pulled via Exa (exa.ai) — verify before saving';
       return;
