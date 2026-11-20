@@ -12,6 +12,11 @@ const SB_URL = process.env.SUPABASE_URL;
 const SB_KEY = process.env.SUPABASE_ANON_KEY;
 
 async function sb(method, table, { body, query } = {}) {
+  if (!SB_URL || !SB_KEY) {
+    const err = new Error('database not configured — set SUPABASE_URL and SUPABASE_ANON_KEY (locally these are missing; the deployed page injects them)');
+    err.expose = true;
+    throw err;
+  }
   const url = new URL(`${SB_URL}/rest/v1/${table}`);
   if (query) for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
   const res = await fetch(url, {
@@ -597,8 +602,7 @@ function start(){
     res.end(JSON.stringify({ error: 'not found' }));
   } catch (err) {
     console.error(err.message);
-    json(res, 500, { error: 'server error', detail: err.message });
-  }
+    json(res, 500, { error: 'server error', detail: err.message });  }
 });
 
 server.listen(PORT, HOST, () => console.log(`OPC relationship workspace listening on ${HOST}:${PORT}`));

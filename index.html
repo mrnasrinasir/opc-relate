@@ -659,7 +659,10 @@ async function pullOwnProfile() {
         } else if (j.status === 'failed') { clearInterval(poll); status.textContent = 'Could not read that profile — fill the fields below, or go back and check the URL.'; }
       } catch (e) { /* keep polling */ }
     }, 5000);
-  } catch (e) { status.textContent = 'Pull failed — check the URL and go back, or fill the fields below.'; }
+  } catch (e) {
+    const msg = (e && e.message || '').replace(/^[^{]*/, '').slice(0, 140) || 'server did not respond';
+    status.textContent = '⚠ Pull failed — ' + msg + '. Fill the fields below and finish manually.';
+  }
 }
 
 function applyPullToReview(status, card) {
@@ -698,7 +701,11 @@ async function pwAdvance() {
     closeProfile();
     renderBrief(); renderFollowup();
     toast(`Welcome, ${me()} — the agent now drafts with your context`);
-  } catch (e) { toast('Could not save your profile — try again'); }
+  } catch (e) {
+    const msg = (e && e.message || '').replace(/^[^{]*/, '').slice(0, 140) || 'server did not respond';
+    const st = $('pwLinkStatus'); if (st) st.textContent = '⚠ Save failed — ' + msg;
+    toast('Could not save your profile — ' + msg);
+  }
 }
 loadProfile();
 
