@@ -382,11 +382,25 @@
   </div>
 </div>
 
-<!-- ============ SCREEN 2 — PROFILE CARD ============ -->
+<!-- ============ SCREEN 2 — PROFILE (two tabs: Analysis / Context) ============ -->
 <section class="screen" id="s2">
   <div class="panel">
     <div id="profileHead"></div>
-    <div id="contactStrip" style="display:flex;gap:8px;flex-wrap:wrap;margin:16px 0"></div>
+
+    <div class="kv" style="margin:18px 0 12px; border-bottom:1px solid var(--line); padding-bottom:0">
+      <button id="tabBtnAnalysis" class="btn ghost small" style="border:none; border-bottom:2px solid var(--accent); border-radius:0; color:var(--accent)" onclick="switchTab('analysis')">Analysis</button>
+      <button id="tabBtnContext" class="btn ghost small" style="border:none; border-radius:0; color:var(--muted)" onclick="switchTab('context')">Context</button>
+    </div>
+
+    <div id="tabAnalysis">
+      <div id="contactStrip" style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px"></div>
+      <div id="analysisBox"></div>
+    </div>
+
+    <div id="tabContext" style="display:none">
+      <div id="contextBox"></div>
+    </div>
+
     <div id="deckStrip" style="display:none"></div>
   </div>
 </section>
@@ -987,7 +1001,7 @@ async function renderDeckStrip() {
 
 function renderCard() { renderDeck(); }
 
-// simple profile card at the top of the relationship screen: photo, name, what they do
+// profile head (always visible above the tabs): photo, name, what they do
 function renderProfileHead() {
   const box = $('profileHead');
   if (!REL) { box.innerHTML = ''; return; }
@@ -996,7 +1010,7 @@ function renderProfileHead() {
   const photo = pc.photo || '';
   const initials = (REL.name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   box.innerHTML = `
-    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
       ${photo
         ? `<img src="${photo}" alt="" style="width:84px;height:84px;border-radius:50%;object-fit:cover;border:2px solid var(--line)">`
         : `<div style="width:84px;height:84px;border-radius:50%;background:var(--bg2);border:2px solid var(--line);display:grid;place-items:center;font-size:24px;color:var(--muted)">${initials}</div>`}
@@ -1006,21 +1020,89 @@ function renderProfileHead() {
         ${pc.location ? `<div style="font-size:12.5px;color:var(--muted);margin-top:4px">📍 ${pc.location}</div>` : ''}
         ${pc.company ? `<div style="font-size:12.5px;color:var(--muted);margin-top:2px">🏢 ${pc.company}</div>` : ''}
       </div>
-    </div>
+    </div>`;
+}
+
+// ---- two tabs: Analysis (quick overview) / Context (your notes + your call) ----
+let curTab = 'analysis';
+function switchTab(t) {
+  curTab = t;
+  $('tabAnalysis').style.display = t === 'analysis' ? 'block' : 'none';
+  $('tabContext').style.display = t === 'context' ? 'block' : 'none';
+  $('tabBtnAnalysis').style.cssText = t === 'analysis' ? 'border:none;border-bottom:2px solid var(--accent);border-radius:0;color:var(--accent)' : 'border:none;border-radius:0;color:var(--muted)';
+  $('tabBtnContext').style.cssText = t === 'context' ? 'border:none;border-bottom:2px solid var(--accent);border-radius:0;color:var(--accent)' : 'border:none;border-radius:0;color:var(--muted)';
+}
+
+function renderAnalysis() {
+  const box = $('analysisBox');
+  if (!box) return;
+  if (!REL) { box.innerHTML = ''; return; }
+  const pc = REL.profile_card || {};
+  const research = pc.research || [];
+  box.innerHTML = `
     ${pc.about ? `<div style="font-size:13px;color:#ccd5e4;line-height:1.55;margin-bottom:16px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:12px 16px">${String(pc.about).slice(0, 280)}${String(pc.about).length > 280 ? '…' : ''}</div>` : ''}
-    ${pc.research && pc.research.length ? `
-      <div style="margin-bottom:16px">
+    ${research.length ? `
+      <div>
         <h2 style="font-size:14.5px;margin-bottom:8px">Research <span class="tag source">INSTANT VIA EXA</span></h2>
         <ul class="clean">
-          ${pc.research.map(r => `<li>${r.finding} ${r.url
+          ${research.map(r => `<li>${r.finding} ${r.url
             ? `<a href="${r.url}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent)">${r.source} ↗</a>`
             : `<span style="font-size:12px;color:var(--muted)">${r.source}</span>`}</li>`).join('')}
         </ul>
-      </div>` : ''}`;
+      </div>` : ''}
+    ${!pc.about && !research.length ? `<div class="banner">Basics only on this card — no overview or research was pulled.</div>` : ''}`;
+}
+
+function renderContext() {
+  const box = $('contextBox');
+  if (!box) return;
+  if (!REL) { box.innerHTML = ''; return; }
+  const want = (REL.contact && REL.contact.want) || '';
+  const decision = REL.assessment && REL.assessment.decision;
+  box.innerHTML = `
+    <label>What you want with this person</label>
+    <textarea id="wantInput" rows="2" placeholder="e.g. explore a collaboration, get advice, a client…">${String(want).replace(/</g, '&lt;')}</textarea>
+    <div class="actions" style="justify-content:flex-start;margin-top:8px">
+      <button class="btn ghost small" onclick="saveWant()">Save</button>
+    </div>
+
+    <h2 style="font-size:14.5px;margin:18px 0 8px">Capture notes</h2>
+    <ul class="clean">
+      ${REL.met_context ? `<li><b>Where:</b> ${REL.met_context}</li>` : ''}
+      ${REL.note && REL.note !== 'No conversation context supplied.' ? `<li><b>Notes:</b> ${String(REL.note).replace(/</g, '&lt;')}</li>` : ''}
+      ${(REL.interactions || []).map(i => `<li><b>${i.author || 'You'}:</b> ${(i.text || '(voice note)').replace(/</g, '&lt;')}</li>`).join('')}
+    </ul>
+
+    <h2 style="font-size:14.5px;margin:18px 0 8px">Your call</h2>
+    ${decision
+      ? `<div class="next-action" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span class="vtag ${decision === 'Pursue' ? 'v-pursue' : 'v-reject'}" style="font-size:12.5px">${decision === 'Pursue' ? '✓ Pursuing' : '✕ Not pursuing'}</span>
+          <span style="font-size:11.5px;color:var(--muted)">${new Date(REL.assessment.decided_at || Date.now()).toLocaleDateString()}</span>
+          <button class="btn ghost small" onclick="decide(null)">Change</button>
+        </div>`
+      : `<div class="actions" style="justify-content:flex-start">
+          <button class="btn primary" onclick="decide('Pursue')">✓ Pursue</button>
+          <button class="btn ghost" onclick="decide('Pass')">✕ Not for now</button>
+        </div>`}`;
+}
+
+async function saveWant() {
+  if (!REL) return;
+  const want = $('wantInput').value.trim();
+  try {
+    REL = await api(`/api/relationships/${REL.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contact: { ...(REL.contact || {}), want } })
+    });
+    toast('Saved');
+  } catch (e) { toast('Could not save'); }
 }
 
 function renderContact() {
   renderProfileHead();
+  renderAnalysis();
+  renderContext();
+  switchTab(curTab);
   const strip = $('contactStrip');
   const c = REL?.contact || {};
   const chips = [
@@ -1402,6 +1484,7 @@ async function decide(decision) {
     }
     if (lastErr) throw lastErr;
     renderAssessment();
+    renderContext();
     if (decision === 'Reject') {
       toast(`Rejected — ${REL.name} moved to the bottom of your list, dimmed. Reopen anytime.`);
       setTimeout(() => { go(0); loadAndShow(); }, 1200);
