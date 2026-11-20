@@ -1,0 +1,2021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Relate — Relationship Workspace for One-Person Companies</title>
+<style>
+  :root {
+    --bg: #0b0e14; --bg2: #11151f; --panel: #151a26; --panel2: #1b2130;
+    --ink: #e8ecf4; --muted: #8b95a7; --line: #232b3d;
+    --accent: #6c8cff; --accent2: #8f6cff; --accent-soft: rgba(108,140,255,.12);
+    --ok: #3ddc97; --ok-soft: rgba(61,220,151,.1);
+    --warn: #f5b544; --warn-soft: rgba(245,181,68,.1);
+    --private: #c792ea; --private-soft: rgba(199,146,234,.12);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { font-family: "Segoe UI", system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; }
+
+  ::selection { background: var(--accent); color: #fff; }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-thumb { background: #263048; border-radius: 5px; }
+
+  /* ---------- chrome ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px;
+    padding: 12px 22px; background: rgba(11,14,20,.82); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 800; font-size: 16px; letter-spacing: .2px; }
+  .brand .dotmark {
+    width: 26px; height: 26px; border-radius: 9px; display: grid; place-items: center;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; font-size: 14px;
+  }
+  .who { margin-left: auto; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; background: #2a3350; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #aab6d8; }
+
+  .rail { display: flex; gap: 6px; padding: 12px 22px; border-bottom: 1px solid var(--line); background: var(--bg2); overflow-x: auto; }
+  .rail button {
+    border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 10px;
+    padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    transition: all .18s ease;
+  }
+  .rail button:hover { color: var(--ink); border-color: #33405e; transform: translateY(-1px); }
+  .rail button.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); border-color: transparent; color: #fff; }
+  .rail button.done { border-color: rgba(61,220,151,.4); color: var(--ok); }
+
+  main { max-width: 1020px; margin: 0 auto; padding: 26px 20px 80px; }
+
+  /* ---------- screens ---------- */
+  .screen { display: none; animation: rise .35s cubic-bezier(.2,.7,.3,1); }
+  .screen.show { display: block; }
+  .gstep { display: none; }
+  .gstep.show { display: block; animation: rise .3s cubic-bezier(.2,.7,.3,1); }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 26px 28px; margin-bottom: 18px; }
+  .panel.glassy { background: linear-gradient(180deg, var(--panel2), var(--panel)); }
+
+  h1 { font-size: 24px; font-weight: 800; letter-spacing: -.3px; margin-bottom: 6px; }
+  h2 { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
+  .sub { color: var(--muted); font-size: 14px; margin-bottom: 18px; line-height: 1.55; }
+  .stagger > * { animation: rise .4s both; }
+  .stagger > *:nth-child(2) { animation-delay: .06s; } .stagger > *:nth-child(3) { animation-delay: .12s; }
+  .stagger > *:nth-child(4) { animation-delay: .18s; } .stagger > *:nth-child(5) { animation-delay: .24s; }
+
+  label { display: block; font-size: 12.5px; font-weight: 700; color: var(--muted); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .6px; }
+  input[type=text], textarea, select {
+    width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px;
+    font-size: 14.5px; font-family: inherit; background: var(--bg2); color: var(--ink);
+    transition: border .15s, box-shadow .15s;
+  }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  textarea { min-height: 110px; resize: vertical; line-height: 1.5; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .row2, .grid2 { grid-template-columns: 1fr !important; } }
+
+  .btn { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 11px; padding: 12px 22px; font-size: 14.5px; font-weight: 700; cursor: pointer; transition: all .18s ease; }
+  .btn.primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+  .btn.primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(108,140,255,.35); }
+  .btn.ghost { background: transparent; color: var(--accent); border: 1px solid #33405e; }
+  .btn.ghost:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .btn.small { padding: 8px 14px; font-size: 13px; border-radius: 9px; }
+  .actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; align-items: center; }
+
+  .tag { display: inline-block; font-size: 10.5px; font-weight: 800; border-radius: 999px; padding: 4px 10px; letter-spacing: .8px; vertical-align: 3px; }
+  .tag.private { background: var(--private-soft); color: var(--private); }
+  .tag.simulated { background: var(--warn-soft); color: var(--warn); }
+  .tag.verified { background: var(--ok-soft); color: var(--ok); }
+  .tag.source { background: #20283a; color: #93a0ba; }
+
+  ul.clean { list-style: none; }
+  ul.clean li { padding: 11px 0 11px 24px; position: relative; border-bottom: 1px dashed var(--line); font-size: 14.5px; line-height: 1.55; }
+  ul.clean li:last-child { border-bottom: 0; }
+  ul.clean li::before { content: "◆"; position: absolute; left: 2px; top: 12px; color: var(--accent); font-size: 10px; }
+
+  .footnote { font-size: 12.5px; color: var(--muted); margin-top: 16px; border-top: 1px dashed var(--line); padding-top: 12px; line-height: 1.5; }
+
+  /* ---------- welcome ---------- */
+  .hero { text-align: center; padding: 70px 20px 40px; }
+  .hero .badge { display: inline-block; font-size: 12px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border: 1px solid rgba(108,140,255,.25); border-radius: 999px; padding: 6px 14px; margin-bottom: 22px; }
+  .hero h1 { font-size: clamp(30px, 5vw, 46px); line-height: 1.15; letter-spacing: -1px; font-weight: 800; }
+  .hero h1 .grad { background: linear-gradient(90deg, var(--accent), var(--accent2), #ff7ab8); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p.tagline { color: var(--muted); font-size: 17px; max-width: 560px; margin: 18px auto 30px; line-height: 1.6; }
+  .hero .quote { font-size: 14.5px; color: #aab6d8; font-style: italic; margin-bottom: 30px; }
+  .hero .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+  .journey { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 40px; text-align: left; }
+  @media (max-width: 720px) { .journey { grid-template-columns: repeat(2, 1fr); } }
+  .jstep { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; cursor: pointer; transition: all .18s; }
+  .jstep:hover { transform: translateY(-3px); border-color: #33405e; }
+  .jstep .num { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; font-weight: 800; font-size: 13px; margin-bottom: 10px; background: var(--accent-soft); color: var(--accent); }
+  .jstep b { display: block; font-size: 14px; margin-bottom: 5px; }
+  .jstep span { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+
+  .recent { margin-top: 34px; text-align: left; }
+  .recent h2 { font-size: 15px; color: var(--muted); }
+  .rel-item { display: flex; align-items: center; gap: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin-top: 10px; cursor: pointer; transition: all .15s; }
+  .rel-item:hover { border-color: var(--accent); transform: translateX(4px); }
+  .rel-item .mark { width: 34px; height: 34px; border-radius: 10px; background: #232c45; display: grid; place-items: center; font-weight: 800; color: #9db1e8; font-size: 14px; }
+  .rel-item b { font-size: 15px; }
+  .rel-item .meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .rel-item .stage { margin-left: auto; font-size: 12px; color: var(--ok); background: var(--ok-soft); padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+  /* relationship cards on the welcome grid */
+  .rel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+  .rel-card { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 16px 14px; cursor: pointer; transition: all .16s; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+  .rel-card:hover { border-color: var(--accent); transform: translateY(-3px); }
+  .rel-card .mark { width: 36px; height: 36px; border-radius: 11px; background: #232c45; display: grid; place-items: center; font-weight: 800; color: #9db1e8; font-size: 14px; }
+  .rel-card b { font-size: 15px; display: block; }
+  .rel-card .meta { font-size: 12px; color: var(--muted); line-height: 1.45; min-height: 17px; }
+  .rel-card .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+  .rel-card .vtag { font-size: 11px; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .v-pursue { color: var(--ok); background: var(--ok-soft); }
+  .v-consider { color: var(--warn); background: rgba(255,184,51,.12); }
+  .v-reject { color: #ff7a90; background: rgba(255,90,112,.1); }
+  .v-card { color: var(--accent); background: var(--accent-soft); }
+  .rel-card .del { position: absolute; top: 10px; right: 10px; font-size: 12px; color: #ff7a90; background: rgba(255,90,112,.08); border: 1px solid #4a2733; border-radius: 8px; padding: 3px 7px; opacity: 0; transition: opacity .15s; cursor: pointer; }
+  .rel-card:hover .del { opacity: 1; }
+  .rel-card.processing { border-color: rgba(108,140,255,.45); }
+  .rel-card.rejected { opacity: .45; filter: saturate(.4); }
+  .rel-card.rejected:hover { opacity: .85; }
+  .rel-card.processing::before { content: '';; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); background-size: 200% 100%; animation: sweep 1.6s linear infinite; }
+  @keyframes sweep { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  .proc { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--accent); }
+  .proc .spin { width: 12px; height: 12px; border: 2px solid rgba(108,140,255,.25); border-top-color: var(--accent); border-radius: 50%; animation: rot 1s linear infinite; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  /* ---------- processing ---------- */
+  .processing { display: none; text-align: center; padding: 30px 0 10px; }
+  .processing.show { display: block; }
+  .spinner { width: 44px; height: 44px; margin: 0 auto 14px; border-radius: 50%; border: 3px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .proc-line { font-size: 13.5px; color: var(--muted); opacity: 0; transition: opacity .3s; margin: 4px 0; }
+  .proc-line.on { opacity: 1; }
+
+  /* ---------- insight card ---------- */
+  .card-preview { border: 1.5px solid transparent; border-radius: 16px; padding: 22px 24px; background: linear-gradient(var(--bg2), var(--bg2)) padding-box, linear-gradient(135deg, var(--accent), var(--accent2)) border-box; }
+  .card-preview h3 { font-size: 17px; margin-bottom: 12px; }
+  .card-preview ul li { font-size: 14px; line-height: 1.55; color: #ccd5e4; }
+  .share-note { font-size: 12px; color: var(--muted); margin-top: 14px; }
+
+  /* ---------- chat ---------- */
+  .chat { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+  .bubble { max-width: 80%; padding: 12px 16px; border-radius: 16px; font-size: 14px; line-height: 1.55; }
+  .bubble.left { background: var(--bg2); border: 1px solid var(--line); border-bottom-left-radius: 4px; align-self: flex-start; }
+  .bubble.right { background: linear-gradient(135deg, rgba(108,140,255,.18), rgba(143,108,255,.18)); border: 1px solid rgba(108,140,255,.3); border-bottom-right-radius: 4px; align-self: flex-end; }
+  .bubble .meta { display: block; font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  .next-action { border-left: 3px solid var(--ok); background: var(--ok-soft); border-radius: 0 12px 12px 0; padding: 14px 18px; font-size: 14.5px; line-height: 1.5; margin-top: 18px; }
+  .next-action .st { font-size: 12.5px; color: var(--ok); margin-top: 5px; }
+
+  .banner { background: var(--warn-soft); border: 1px solid rgba(245,181,68,.25); border-radius: 12px; padding: 12px 16px; font-size: 12.5px; color: var(--warn); line-height: 1.5; margin-bottom: 16px; }
+
+  .kv { display: flex; gap: 10px; font-size: 13px; color: var(--muted); margin-bottom: 14px; align-items: center; flex-wrap: wrap; }
+  .kv .dotline { display: flex; align-items: center; gap: 7px; }
+  .pdt { width: 9px; height: 9px; border-radius: 50%; background: var(--line); }
+  .pdt.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .pdt.done { background: var(--ok); }
+
+  .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px); background: #1d2637; color: var(--ink); border: 1px solid #33405e; padding: 12px 22px; border-radius: 12px; font-size: 13.5px; opacity: 0; transition: all .3s; pointer-events: none; z-index: 50; box-shadow: 0 12px 32px rgba(0,0,0,.5); }
+  .toast.show { opacity: 1; transform: translateX(-50%); }
+
+  .empty { text-align: center; color: var(--muted); padding: 26px; font-size: 14px; }
+
+  footer.demo { text-align: center; color: #5a6478; font-size: 12px; padding: 26px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><div class="dotmark">◆</div> Relate<span style="color:var(--muted);font-weight:500">·workspace</span></div>
+  <div class="who" id="whoBox" style="cursor:pointer" title="View / edit your profile" onclick="openProfile()">
+    <span id="whoName">Set up your profile</span><div class="avatar" id="whoAvatar">?</div>
+  </div>
+  <div style="cursor:pointer; margin-left:2px; font-size:15px; color:var(--muted)" title="Integrations and API keys" onclick="openSettings()">Settings</div>
+</div>
+
+<!-- ============ PROFILE SETUP (guided, first visit) ============ -->
+<div id="profileModal" style="display:none; position:fixed; inset:0; z-index:60; background:rgba(7,9,14,.8); backdrop-filter:blur(6px); overflow:auto">
+  <div class="panel glassy" style="max-width:560px; margin:60px auto">
+    <div class="kv"><span class="dotline" id="pwDots"></span></div>
+    <h1 id="pwTitle">Let's set you up</h1>
+    <p class="sub" id="pwSub"></p>
+    <div id="pwBody"></div>
+    <div class="actions">
+      <button class="btn primary" id="pwNext" onclick="pwAdvance()">Continue →</button>
+      <button class="btn ghost small" id="pwSkip" onclick="closeProfile()">Skip for now</button>
+    </div>
+    <div class="footnote">🔒 Your profile stays private — it only helps the agent draft better briefs and follow-ups for <i>you</i>. Anyone on your team can set up their own.</div>
+  </div>
+</div>
+
+<!-- ============ SETTINGS (integrations — tokens stay server-side) ============ -->
+<div id="settingsModal" style="display:none; position:fixed; inset:0; z-index:60; background:rgba(7,9,14,.8); backdrop-filter:blur(6px); overflow:auto">
+  <div class="panel glassy" style="max-width:560px; margin:60px auto">
+    <h1>Integrations</h1>
+    <p class="sub">Keys are submitted over HTTPS and stored server-side — they never appear in the page source or chat.</p>
+
+    <div style="margin:18px 0">
+      <label style="font-size:13px;font-weight:600">Apify API token</label>
+      <p style="font-size:12px;color:var(--muted);margin:4px 0 8px" id="apifyStatus"></p>
+      <div style="display:flex;gap:8px">
+        <input id="apifyToken" type="password" placeholder="apify_api_…" style="flex:1; background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; color:#e8ecf4; font-size:14px">
+        <button class="btn ghost small" onclick="testApify(false)">Test</button>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-top:6px">Powers instant LinkedIn profile pulls (harvestapi/linkedin-profile-scraper, $4/1k profiles).</p>
+    </div>
+
+    <div style="margin:18px 0">
+      <label style="font-size:13px;font-weight:600">AI provider</label>
+      <p style="font-size:12px;color:var(--muted);margin:4px 0 8px" id="aiStatus"></p>
+      <select id="aiProvider" style="width:100%; background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; color:#e8ecf4; font-size:14px">
+        <option value="">— not set —</option>
+        <option value="openai">OpenAI</option>
+        <option value="anthropic">Anthropic</option>
+        <option value="qwen">Qwen (DashScope)</option>
+        <option value="custom">Custom (OpenAI-compatible)</option>
+      </select>
+      <input id="aiKey" type="password" placeholder="AI API key" style="width:100%; margin-top:8px; background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; color:#e8ecf4; font-size:14px">
+      <p style="font-size:12px;color:var(--muted);margin-top:6px">Will power automated assessments and insight-card generation.</p>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" onclick="saveSettings()">Save settings</button>
+      <button class="btn ghost small" onclick="$('settingsModal').style.display='none'">Close</button>
+    </div>
+    <div class="footnote">Leave a field empty to keep its stored value; enter text to replace it.</div>
+  </div>
+</div>
+
+<div class="rail" id="rail" style="display:none">
+  <button data-s="0">⌂ Welcome</button>
+  <button data-s="1">1 · Start a conversation</button>
+  <button data-s="2">2 · Assessment</button>
+  <button data-s="3">3 · Insight deck</button>
+  <button data-s="4">4 · Continue the journey</button>
+</div>
+
+<main>
+
+<!-- ============ WELCOME ============ -->
+<section class="screen show" id="s0">
+  <div class="hero stagger">
+    <div><span class="badge">FOR ONE-PERSON COMPANIES</span></div>
+    <div><h1>Your network shouldn't depend<br>on your <span class="grad">memory</span>.</h1></div>
+    <p class="tagline">Every great first conversation becomes a relationship record — with context, a shareable insight and a clear next step. Nothing feels automated. Nothing gets forgotten.</p>
+    <div class="quote">"…and your relationships shouldn't feel automated."</div>
+    <div class="cta">
+      <button class="btn primary" onclick="startDemo()">Start a relationship →</button>
+      <button class="btn ghost" onclick="loadAndShow()">View my relationships</button>
+    </div>
+  </div>
+
+  <div class="journey stagger">
+    <div class="jstep" onclick="go(1)"><div class="num">1</div><b>Start a conversation</b><span>Met someone? Add them and drop a quick note or transcript.</span></div>
+    <div class="jstep" onclick="go(2)"><div class="num">2</div><b>Assessment</b><span>The agent researches them and scores the fit — you decide: pursue, consider, or reject.</span></div>
+    <div class="jstep" onclick="go(3)"><div class="num">3</div><b>Insight deck</b><span>A professional PDF intro to the relationship — why connect, opportunities, your value.'ll see. Private stays private.</span></div>
+    <div class="jstep" onclick="go(4)"><div class="num">4</div><b>Continue the journey</b><span>Follow-up drafts, recorded responses, and the next action — always moving.</span></div>
+  </div>
+
+  <div class="recent" id="recentWrap" style="display:none">
+    <h2>RECENT RELATIONSHIPS</h2>
+    <div id="recentList"></div>
+  </div>
+
+  <footer class="demo">
+    Voice capture is user-initiated · research is real public sources cited by the QwenWork agent · nothing is ever auto-sent.<br>
+    Your profile and relationship records stay private — only insight cards you explicitly share are public.
+  </footer>
+</section>
+
+<!-- ============ SCREEN 1 — conversational capture ============ -->
+<section class="screen" id="s1">
+  <div class="panel glassy" style="max-width:640px; margin:0 auto; display:flex; flex-direction:column; min-height:72vh">
+    <div style="text-align:center; padding:6px 0 14px; border-bottom:1px solid var(--line)">
+      <div class="kv" id="gDots" style="justify-content:center; margin-bottom:6px"></div>
+      <b id="gStage" style="font-size:14px">Capturing a relationship</b>
+    </div>
+
+    <div style="flex:1; display:flex; flex-direction:column; justify-content:center; padding:30px 4px 18px">
+      <h1 id="gQuestion" style="text-align:center"></h1>
+      <p class="sub" id="gDescription" style="text-align:center; margin-top:8px"></p>
+      <div id="gChoices" class="actions" style="display:none; flex-direction:column; gap:10px; max-width:360px; margin:14px auto 0"></div>
+      <label for="chatInput" id="gInputLabel">Name</label>
+      <textarea id="chatInput" placeholder="Full name" oninput="gSync()" onkeydown="if(event.key==='Enter' && !(gCur()==='note' && event.shiftKey)){event.preventDefault();gSend()}" style="min-height:52px" rows="1"></textarea>
+      <div id="gMetWrap" style="display:none"><label for="gMetInput">Where did you meet? (optional)</label><input type="text" id="gMetInput" oninput="$('fMet').value=this.value" onkeydown="if(event.key==='Enter'){event.preventDefault();gSend()}" placeholder="Event, referral, online..."></div>
+      <div id="gLinkTools" class="actions" style="display:none; justify-content:center">
+        <button class="btn ghost small" onclick="scanQR()">Scan QR code</button>
+        <button class="btn ghost small" onclick="$('cardFile').click()">Business card</button>
+        <button class="btn ghost small" onclick="gSync();pullProfile()">Read LinkedIn profile</button>
+      </div>
+    </div>
+
+    <!-- results land inline: pulled profile card, QR camera, card OCR -->
+    <div id="chatExtras" style="padding:0 4px">
+      <video id="qrVideo" playsinline style="display:none; width:100%; max-width:340px; border-radius:12px; margin:0 auto 8px; border:1px solid var(--line)"></video>
+      <div id="qrState" style="font-size:12.5px;color:var(--muted);margin-bottom:8px"></div>
+      <div id="profileCardBox" style="display:none; margin-bottom:10px; background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding:12px 16px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+          <img id="profileCardPhoto" style="display:none; width:48px; height:48px; border-radius:50%; object-fit:cover; border:1px solid var(--line)" alt="">
+          <div>
+            <b style="font-size:13px" id="profileCardName">📇 Their profile card</b>
+            <div style="font-size:11px;color:var(--muted)" id="profileCardSrc"></div>
+          </div>
+        </div>
+        <div id="profileCardContent" style="font-size:13px;color:#ccd5e4;line-height:1.55"></div>
+      </div>
+      <div id="ocrZone" style="display:none; margin-bottom:10px">
+        <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap; background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding:12px">
+          <img id="cardImg" style="max-width:200px;border-radius:10px;border:1px solid var(--line)">
+          <div style="flex:1;min-width:200px">
+            <div id="ocrStatus" style="font-size:13px;color:var(--accent)">Reading card…</div>
+            <div id="ocrText" style="font-size:12.5px;color:var(--muted);margin-top:6px;max-height:100px;overflow:auto;white-space:pre-wrap"></div>
+            <button class="btn ghost small" id="agentOcrBtn" onclick="agentOcr()" style="display:none">⚡ Read card with the QwenWork agent</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- one input — type or talk -->
+    <div style="border-top:1px solid var(--line); padding-top:14px">
+      <div style="display:flex; gap:10px; align-items:center">
+        <button id="recBtn" onclick="toggleRecord('note')" title="Record a voice note — the agent transcribes it" style="width:42px; height:42px; border-radius:50%; border:1px solid var(--line); cursor:pointer; display:grid; place-items:center; background:var(--bg2); color:var(--accent); font-size:17px; transition:all .18s; flex-shrink:0">🎙</button>
+         <button class="btn ghost" id="gBack" onclick="gBack()">Back</button>
+         <button class="btn ghost" id="gSkip" onclick="gSkip()">Skip</button>
+         <button class="btn primary" id="gContinue" onclick="gSend()">Continue</button>
+      </div>
+      <style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}} #recBtn.rec,#recBtn2.rec{background:#ff5470;color:#fff;border-color:#ff5470;animation:pulse 1.2s infinite}</style>
+      <div style="display:flex;align-items:center;gap:12px;min-height:28px;margin-top:8px">
+        <span id="recState" style="font-size:12.5px;color:var(--muted)"></span>
+        <audio id="recPreview" controls style="display:none;height:32px"></audio>
+        <span id="chatHint" style="font-size:12px;color:var(--muted);margin-left:auto"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- data fields kept in sync by the chat (hidden) -->
+  <div style="display:none">
+    <input type="text" id="fName"><input type="text" id="fRole"><input type="text" id="fEmail">
+    <input type="text" id="fPhone"><input type="text" id="fLinkedin"><input type="text" id="fMet" value="Founder event — Singapore">
+    <textarea id="fNote"></textarea>
+    <input type="file" id="cardFile" accept="image/*" capture="environment" onchange="ocrCard(this)">
+    <input type="file" id="qrFile" accept="image/*" onchange="qrFromFile(this)">
+    <button id="btnSave" onclick="saveConversation()">go</button>
+  </div>
+</section>
+
+<!-- ============ AGENT PROCESSING OVERLAY ============ -->
+<div id="loadScreen" style="display:none; position:fixed; inset:0; z-index:70; background:rgba(7,9,14,.94); backdrop-filter:blur(8px)">
+  <div style="max-width:420px; margin:22vh auto; text-align:center; padding:0 24px">
+    <div class="brand" style="justify-content:center; margin-bottom:26px"><div class="dotmark">◆</div> Relate</div>
+    <div class="spinner"></div>
+    <h2 id="loadTitle" style="margin:18px 0 6px; font-size:19px">Saving relationship</h2>
+    <div id="loadSub" role="status" aria-live="polite" style="font-size:13.5px; color:var(--muted); margin-bottom:18px">Waiting for the save response.</div>
+    <div class="proc-line" id="pl1"></div>
+    <div class="proc-line" id="pl2"></div>
+    <div class="proc-line" id="pl3"><span id="plWho"></span></div>
+    <div class="proc-line" id="pl4"></div>
+    <div class="actions" id="loadActions" style="display:none; justify-content:center">
+      <button class="btn primary" onclick="leaveProcessing(2)">View pending assessment</button>
+      <button class="btn ghost" onclick="leaveProcessing(0)">Back to workspace</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 2 — ASSESSMENT ============ -->
+<section class="screen" id="s2">
+  <div class="panel">
+    <div class="kv">
+      <span class="dotline"><span class="pdt done"></span> captured</span>
+      <span class="dotline"><span class="pdt on"></span> assessment</span>
+      <span class="dotline"><span class="pdt"></span> insight card</span>
+      <span class="dotline"><span class="pdt"></span> follow-up</span>
+    </div>
+    <h1><span id="bName">—</span> — assessment <span class="tag private">PRIVATE UNTIL YOU DECIDE</span></h1>
+    <p class="sub" id="bSub">The agent researched their background and scored the fit. You make the call.</p>
+    <div id="contactStrip" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+    <div id="deckStrip" style="display:none"></div>
+
+    <div id="assessBox"></div>
+
+    <div class="grid2" style="display:grid;grid-template-columns:1.4fr 1fr;gap:18px;margin-top:18px">
+      <div class="stagger">
+        <h2>From the conversation <span class="tag private" title="Click any line to correct it">CONTEXT NOTES</span></h2>
+        <ul class="clean" id="convList"></ul>
+        <div class="footnote">✏️ Your capture notes — the context the agent used for research. Click any line to correct it.</div>
+      </div>
+      <div>
+        <h2>Research behind the assessment</h2>
+        <div class="banner">RESEARCH BY THE QWENWORK AGENT — real public web searches, sources cited, gaps flagged, never mixed with conversation facts.</div>
+        <ul class="clean" id="researchList"></ul>
+      </div>
+    </div>
+
+    <div class="actions" id="decisionRow">
+      <button class="btn ghost" style="color:#ff7a90;border-color:#4a2733" onclick="decide('Reject')">✕ Reject</button>
+      <button class="btn ghost" onclick="decide('Consider')">? Consider</button>
+      <button class="btn primary" onclick="decide('Pursue')">✓ Worth pursuing →</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SCREEN 3 ============ -->
+<section class="screen" id="s3">
+  <div class="panel">
+    <h1>Insight deck for <span id="cName">them</span> <span class="tag verified">PDF — WHAT THEY RECEIVE</span></h1>
+    <p class="sub">A professional intro into the relationship: why you should connect, potential opportunities, and the value you bring. Generated by the QwenWork agent from your conversation, research and profile — you review before anything is shared.</p>
+
+    <div id="deckPanel" style="background:var(--bg2); border:1px solid var(--line); border-radius:14px; padding:26px 24px; text-align:center; min-height:180px; display:flex; flex-direction:column; justify-content:center; gap:12px">
+      <div id="deckState" style="font-size:14px"></div>
+      <div id="deckActions" class="actions" style="justify-content:center"></div>
+    </div>
+
+    <div class="share-note" style="margin-top:14px">Drafted by the agent — shared by your deliberate action, never auto-sent. Private notes and unverified research stay out. The public link opens the deck page only.</div>
+  </div>
+</section>
+
+<!-- ============ SCREEN 4 ============ -->
+<section class="screen" id="s4">
+  <div class="panel glassy">
+    <h1>Continue the journey</h1>
+    <p class="sub">Review the suggested follow-up, record what you actually sent and add <span id="dName">their</span> response when it arrives.</p>
+
+    <h2>Suggested follow-up message <span class="tag private">AGENT DRAFT — YOU APPROVE &amp; SEND IT YOURSELF</span></h2>
+    <div class="bubble right" id="followup" contenteditable="true" style="max-width:78%"></div>
+    <div class="chat" id="timeline"></div>
+
+    <div class="next-action" id="nextActionBox" style="display:none"></div>
+
+    <label>Add a comment or voice note</label>
+    <div style="position:relative">
+      <textarea id="fNext" placeholder="Type a comment, or tap the mic and record…" style="padding-right:56px"></textarea>
+      <button id="recBtn2" onclick="toggleRecord('tl')" title="Record a voice note" style="position:absolute; right:10px; bottom:10px; width:40px; height:40px; border-radius:50%; border:0; cursor:pointer; display:grid; place-items:center; background:var(--bg2); border:1px solid var(--line); color:var(--accent); font-size:17px; transition:all .18s">🎙</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:8px;min-height:32px">
+      <span id="recState2" style="font-size:12.5px;color:var(--muted)"></span>
+      <audio id="recPreview2" controls style="display:none;height:32px"></audio>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary" onclick="addInteraction()">Save interaction &amp; update next action</button>
+      <button class="btn ghost" onclick="go(0)">↺ Back to workspace</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let REL = null; // current relationship row
+let PROFILE = null; // { name, role, offer, looking, tone }
+
+// ---- user profile: initial setup + context for the agent ----
+const me = () => (PROFILE?.name || 'You').split(' ')[0];
+const iAm = () => PROFILE?.name || 'You';
+
+function renderWho() {
+  if (!PROFILE) {
+    $('whoName').textContent = 'Set up your profile';
+    $('whoAvatar').textContent = '?';
+    $('whoAvatar').style.backgroundImage = '';
+    return;
+  }
+  $('whoName').textContent = `${PROFILE.name}${PROFILE.role ? ' · ' + PROFILE.role : ''}`;
+  const photo = PROFILE.photo || (PROFILE.linkedin_card && PROFILE.linkedin_card.photo);
+  const av = $('whoAvatar');
+  if (photo) {
+    av.textContent = '';
+    av.style.cssText = 'width:26px;height:26px;border-radius:50%;background-size:cover;background-position:center;background-image:url("' + photo.replace(/"/g, '%22') + '")';
+  } else {
+    av.style.cssText = '';
+    av.textContent = PROFILE.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  }
+}
+
+async function loadProfile() {
+  try { PROFILE = await api('/api/profile'); } catch (e) { PROFILE = null; }
+  renderWho();
+  if (!PROFILE) openProfile(); // first visit: guided setup
+}
+
+// guided onboarding: method → identity → photo → fast pull & review
+let pwStep = 0;
+const pwDraft = { method: '', name: '', role: '', offer: '', looking: '', tone: '', linkedin_url: '', linkedin_card: null, photo: '' };
+const PW_TITLES = [
+  ['How do you want to set up?', 'Start from your LinkedIn, or type it in yourself.'],
+  ['Who are you?', 'The basics the agent needs to draft for you.'],
+  ['Your photo', 'Shown on decks you share. Upload an image or use your camera.'],
+  ['Fast pull & review', 'We pull your public profile data — you check it before anything is saved.']
+];
+
+function openProfile() {
+  if (PROFILE) {
+    Object.assign(pwDraft, { method: 'manual', name: PROFILE.name, role: PROFILE.role || '', offer: PROFILE.offer || '',
+      looking: PROFILE.looking || '', tone: PROFILE.tone || '', linkedin_url: PROFILE.linkedin_url || '',
+      linkedin_card: PROFILE.linkedin_card || null, photo: PROFILE.photo || '' });
+    pwStep = 3; // editing: land on the review step
+  } else {
+    pwStep = 0;
+  }
+  renderPw();
+  $('profileModal').style.display = 'block';
+  $('pwSkip').style.display = PROFILE ? 'none' : 'inline-flex';
+}
+
+function closeProfile() { stopPwQR(); stopPwCamera(); $('profileModal').style.display = 'none'; }
+
+// ---- settings: integration keys stored server-side, submitted over HTTPS ----
+async function openSettings() {
+  $('settingsModal').style.display = 'block';
+  $('apifyToken').value = ''; $('aiKey').value = '';
+  try {
+    const s = await api('/api/settings');
+    $('apifyStatus').textContent = s.apify_token?.set
+      ? `Stored (••••${s.apify_token.last4}) — LinkedIn pulls run instantly via Apify`
+      : 'Not set — profile pulls queue for the QwenWork agent instead';
+    $('aiStatus').textContent = s.ai_key?.set
+      ? `${s.ai_provider || 'AI'} key stored (••••${s.ai_key.last4})`
+      : 'Not set — assessments are drafted when research is processed';
+    $('aiProvider').value = s.ai_provider || '';
+  } catch (e) { $('apifyStatus').textContent = 'Could not load settings'; }
+}
+
+async function testApify(save) {
+  const token = $('apifyToken').value.trim();
+  $('apifyStatus').textContent = 'Testing token against Apify…';
+  try {
+    const r = await api('/api/settings/test-apify', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(token ? { apify_token: token } : {})
+    });
+    if (r.ok) {
+      $('apifyStatus').textContent = `Connected as ${r.username}${r.plan ? ' (' + r.plan + ' plan)' : ''}`;
+      if (save) saveSettings();
+    } else {
+      $('apifyStatus').textContent = `Failed: ${r.error || 'invalid token'}`;
+    }
+  } catch (e) { $('apifyStatus').textContent = 'Test request failed'; }
+}
+
+async function saveSettings() {
+  const body = {};
+  const tok = $('apifyToken').value.trim(); if (tok) body.apify_token = tok;
+  const prov = $('aiProvider').value; if (prov !== '') body.ai_provider = prov;
+  const key = $('aiKey').value.trim(); if (key) body.ai_key = key;
+  if (!Object.keys(body).length) { toast('Nothing to save — enter a value to change it'); return; }
+  try {
+    await api('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    toast('Settings saved — stored server-side');
+    $('apifyToken').value = ''; $('aiKey').value = '';
+    openSettings();
+  } catch (e) { toast('Could not save settings'); }
+}
+
+function renderPw() {
+  const [title, sub] = PW_TITLES[Math.min(pwStep, 3)];
+  $('pwTitle').textContent = title;
+  $('pwSub').textContent = sub;
+  $('pwDots').innerHTML = [0, 1, 2, 3].map(i => `<span class="pdt ${i < pwStep ? 'done' : i === pwStep ? 'on' : ''}"></span>`).join('');
+  const skip = $('pwSkip');
+  if (pwStep > 0) { skip.textContent = '← Back'; skip.onclick = () => { pwStep--; renderPw(); }; skip.style.display = 'inline-flex'; }
+  else { skip.textContent = PROFILE ? 'Close' : 'Skip for now'; skip.onclick = closeProfile; skip.style.display = PROFILE ? 'inline-flex' : 'inline-flex'; }
+  const body = $('pwBody');
+  stopPwQR(); stopPwCamera();
+  body.innerHTML = '';
+  const nextBtn = $('pwNext');
+  nextBtn.style.display = 'inline-flex';
+
+  if (pwStep === 0) {
+    // fast onboarding: scan LinkedIn QR / upload photo / paste URL / manual
+    body.innerHTML = `
+      <div style="display:grid; gap:12px; margin-top:6px">
+        <div onclick="pwScanQR()" style="background:var(--bg2); border:1px solid var(--line); border-radius:14px; padding:18px; cursor:pointer; transition:all .15s">
+          <b style="font-size:15px">⌗ Scan your LinkedIn QR <span class="tag verified" style="font-size:10.5px;margin-left:6px">FASTEST</span></b>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5">Point your camera at the QR code in the LinkedIn app — we pull your profile instantly.</div>
+        </div>
+        <div onclick="$('pwScanFile').click()" style="background:var(--bg2); border:1px solid var(--line); border-radius:14px; padding:18px; cursor:pointer; transition:all .15s">
+          <b style="font-size:15px">⬆ Upload a photo</b>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5">A screenshot of your LinkedIn QR, or your business card — we read the link from it.</div>
+        </div>
+        <div onclick="pwChoose('linkedin')" style="background:var(--bg2); border:1px solid var(--line); border-radius:14px; padding:18px; cursor:pointer; transition:all .15s">
+          <b style="font-size:15px">🔗 Paste LinkedIn URL</b>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5">Copy your profile link straight from LinkedIn.</div>
+        </div>
+        <div onclick="pwChoose('manual')" style="background:var(--bg2); border:1px solid var(--line); border-radius:14px; padding:18px; cursor:pointer; transition:all .15s">
+          <b style="font-size:15px">✎ Fill in manually</b>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5">Type your name and role — nothing is fetched.</div>
+        </div>
+      </div>
+      <input type="file" id="pwScanFile" accept="image/*" style="display:none" onchange="pwPhotoScan(this)">
+      <video id="pwQrVideo" playsinline style="display:none; width:100%; max-width:320px; border-radius:12px; margin:14px auto 0; border:1px solid var(--line)"></video>
+      <div id="pwScanState" style="font-size:12.5px;color:var(--muted);margin-top:8px"></div>
+      ${pwDraft.linkedin_url ? `<div style="font-size:12px;color:var(--ok);margin-top:6px">✓ LinkedIn captured: ${pwDraft.linkedin_url}</div>` : ''}`;
+    nextBtn.style.display = pwDraft.linkedin_url ? 'inline-flex' : 'none';
+    nextBtn.textContent = 'Continue →';
+    return;
+  }
+
+  if (pwStep === 1) {
+    if (pwDraft.method === 'linkedin') {
+      body.innerHTML = `
+        <label>Your LinkedIn profile URL</label>
+        <input type="text" id="pw_linkedin_url" value="${(pwDraft.linkedin_url || '').replace(/"/g, '&quot;')}" placeholder="https://www.linkedin.com/in/you" autofocus>
+        <div style="font-size:12px;color:var(--muted);margin-top:6px">Double-check the handle — a typo is the #1 cause of failed pulls.</div>`;
+    } else {
+      body.innerHTML = `
+        <label>Your name</label>
+        <input type="text" id="pw_name" value="${(pwDraft.name || '').replace(/"/g, '&quot;')}" placeholder="e.g. Nasri Nasir" autofocus>
+        <label style="margin-top:10px">What do you do?</label>
+        <input type="text" id="pw_role" value="${(pwDraft.role || '').replace(/"/g, '&quot;')}" placeholder="e.g. Consultant — Notion systems and AI training">`;
+    }
+  }
+
+  if (pwStep === 2) {
+    // photo: upload or camera
+    body.innerHTML = `
+      <div style="display:flex; justify-content:center; margin:10px 0 16px">
+        <img id="pwPhotoPreview" src="${pwDraft.photo || (pwDraft.linkedin_card && pwDraft.linkedin_card.photo) || ''}"
+             style="width:110px;height:110px;border-radius:50%;object-fit:cover;border:2px solid var(--line);${(pwDraft.photo || (pwDraft.linkedin_card && pwDraft.linkedin_card.photo)) ? '' : 'display:none'}" alt="">
+      </div>
+      <div class="actions" style="justify-content:center">
+        <button class="btn ghost small" onclick="$('pwPhotoFile').click()">⬆ Upload image</button>
+        <button class="btn ghost small" onclick="startPwCamera()">📷 Use camera</button>
+        ${pwDraft.photo ? '<button class="btn ghost small" style="color:#ff7a90;border-color:#4a2733" onclick="pwDraft.photo=\'\';renderPw()">Remove</button>' : ''}
+      </div>
+      <input type="file" id="pwPhotoFile" accept="image/*" style="display:none" onchange="pwPhotoChosen(this)">
+      <video id="pwCam" playsinline style="display:none; width:100%; max-width:320px; border-radius:12px; margin:12px auto 0; border:1px solid var(--line)"></video>
+      <div id="pwCamBar" class="actions" style="display:none; justify-content:center; margin-top:10px">
+        <button class="btn primary small" onclick="pwCapturePhoto()">Capture</button>
+        <button class="btn ghost small" onclick="stopPwCamera()">Cancel</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);text-align:center;margin-top:10px">Optional — you can add it later from your avatar. ${pwDraft.linkedin_card && pwDraft.linkedin_card.photo && !pwDraft.photo ? 'Your LinkedIn photo will be used until you set your own.' : ''}</div>`;
+  }
+
+  if (pwStep === 3) {
+    // fast pull & review
+    const hasCard = !!pwDraft.linkedin_card;
+    body.innerHTML = `
+      <div id="pwPullBox" style="background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:14px">
+        ${pwDraft.method === 'linkedin' ? `<div id="pwLinkStatus" style="font-size:13px;color:var(--muted)">Ready to pull your public LinkedIn data…</div>` : '<div style="font-size:13px;color:var(--muted)">Manual setup — no data pulled. Your typed details below are all the agent knows.</div>'}
+      </div>
+      <label>Your name</label>
+      <input type="text" id="pw_name" value="${(pwDraft.name || '').replace(/"/g, '&quot;')}" placeholder="e.g. Nasri Nasir">
+      <label style="margin-top:10px">What do you do?</label>
+      <input type="text" id="pw_role" value="${(pwDraft.role || '').replace(/"/g, '&quot;')}" placeholder="Your role / headline">
+      <label style="margin-top:10px">Your services / offer</label>
+      <input type="text" id="pw_offer" value="${(pwDraft.offer || '').replace(/"/g, '&quot;')}" placeholder="What you can offer relationships">
+      <label style="margin-top:10px">Looking for…</label>
+      <input type="text" id="pw_looking" value="${(pwDraft.looking || '').replace(/"/g, '&quot;')}" placeholder="People and opportunities you want">`;
+    nextBtn.textContent = 'Finish setup ✓';
+    if (pwDraft.method === 'linkedin' && !hasCard) pullOwnProfile();
+    return;
+  }
+
+  nextBtn.textContent = pwStep === 2 ? 'Continue →' : 'Next →';
+  const first = body.querySelector('input'); if (first) first.focus();
+}
+
+function pwChoose(method) {
+  pwDraft.method = method;
+  pwStep = 1;
+  renderPw();
+}
+
+// ---- fast onboarding: QR scan / photo decode in the wizard ----
+let pwQrStream = null, pwQrLoop = null;
+
+function pwQRFound(payload) {
+  const m = String(payload || '').match(/https?:\/\/(www\.)?linkedin\.com\/[^\s"']+/i);
+  if (!m) { $('pwScanState').textContent = 'That QR code is not a LinkedIn profile — try your LinkedIn QR, or paste the URL'; return false; }
+  stopPwQR();
+  pwDraft.method = 'linkedin';
+  pwDraft.linkedin_url = m[0].split('?')[0];
+  toast('LinkedIn captured from QR');
+  pwStep = 1;
+  renderPw();
+  return true;
+}
+
+async function pwScanQR() {
+  if (!('BarcodeDetector' in window)) { $('pwScanFile').click(); return; }
+  const state = $('pwScanState');
+  try {
+    pwQrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const v = $('pwQrVideo');
+    v.srcObject = pwQrStream; v.style.display = 'block';
+    state.textContent = '⌗ scanning — point at your LinkedIn QR code…';
+    const det = new BarcodeDetector();
+    pwQrLoop = setInterval(async () => {
+      try {
+        const codes = await det.detect(v);
+        if (codes.length) pwQRFound(codes[0].rawValue);
+      } catch (e) { /* frame not ready */ }
+    }, 600);
+  } catch (e) { state.textContent = 'Camera unavailable — upload a photo of the QR instead'; $('pwScanFile').click(); }
+}
+
+function stopPwQR() {
+  if (pwQrLoop) { clearInterval(pwQrLoop); pwQrLoop = null; }
+  if (pwQrStream) { pwQrStream.getTracks().forEach(t => t.stop()); pwQrStream = null; }
+  const v = $('pwQrVideo');
+  if (v) { v.style.display = 'none'; v.srcObject = null; }
+}
+
+function pwPhotoScan(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const state = $('pwScanState');
+  state.textContent = '⬆ reading the image…';
+  const img = new Image();
+  img.onload = () => {
+    const cv = document.createElement('canvas');
+    cv.width = img.width; cv.height = img.height;
+    cv.getContext('2d').drawImage(img, 0, 0);
+    const data = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+    // 1) try QR decode
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+    s.onload = () => {
+      const code = window.jsQR && window.jsQR(data.data, data.width, data.height);
+      if (code && pwQRFound(code.data)) return;
+      // 2) no QR — OCR the image for a linkedin URL (business card / screenshot)
+      pwOcrForLinkedIn(cv, state);
+    };
+    s.onerror = () => pwOcrForLinkedIn(cv, state);
+    document.head.appendChild(s);
+  };
+  img.onerror = () => { state.textContent = 'Could not read that image'; };
+  img.src = URL.createObjectURL(file);
+}
+
+function pwOcrForLinkedIn(cv, state) {
+  state.textContent = '⌗ reading text from the image…';
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+  s.onload = async () => {
+    try {
+      const { data } = await Tesseract.recognize(cv, 'eng');
+      const m = (data.text || '').match(/linkedin\.com\/in\/[A-Za-z0-9\-_%]+/i);
+      if (m) { pwQRFound('https://' + m[0]); return; }
+      state.textContent = 'No LinkedIn link found in that image — try the LinkedIn QR, paste the URL, or set up manually';
+    } catch (e) { state.textContent = 'Could not read the image — paste your LinkedIn URL instead'; }
+  };
+  s.onerror = () => { state.textContent = 'OCR library failed to load — paste your LinkedIn URL instead'; };
+  document.head.appendChild(s);
+}
+
+// ---- photo: upload or camera, downscaled to a small data URL ----
+function pwPhotoChosen(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => pwSetPhoto(reader.result);
+  reader.readAsDataURL(file);
+}
+let pwCamStream = null;
+async function startPwCamera() {
+  try {
+    pwCamStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 640 } });
+    const v = $('pwCam');
+    v.srcObject = pwCamStream;
+    v.style.display = 'block';
+    $('pwCamBar').style.display = 'flex';
+  } catch (e) { toast('Camera unavailable — use Upload instead'); }
+}
+function stopPwCamera() {
+  if (pwCamStream) { pwCamStream.getTracks().forEach(t => t.stop()); pwCamStream = null; }
+  const v = $('pwCam');
+  if (v) { v.style.display = 'none'; v.srcObject = null; }
+  const bar = $('pwCamBar');
+  if (bar) bar.style.display = 'none';
+}
+function pwCapturePhoto() {
+  const v = $('pwCam');
+  if (!v || !v.videoWidth) { toast('Camera not ready'); return; }
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 256;
+  const side = Math.min(v.videoWidth, v.videoHeight);
+  c.getContext('2d').drawImage(v, (v.videoWidth - side) / 2, (v.videoHeight - side) / 2, side, side, 0, 0, 256, 256);
+  pwSetPhoto(c.toDataURL('image/jpeg', 0.85));
+  stopPwCamera();
+}
+function pwSetPhoto(dataUrl) {
+  const img = new Image();
+  img.onload = () => {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 256;
+    const side = Math.min(img.width, img.height);
+    c.getContext('2d').drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 256, 256);
+    pwDraft.photo = c.toDataURL('image/jpeg', 0.85);
+    renderPw();
+    toast('Photo set');
+  };
+  img.src = dataUrl;
+}
+
+async function pullOwnProfile() {
+  const status = $('pwLinkStatus');
+  if (!status) return;
+  const url = pwDraft.linkedin_url || '';
+  if (!url || !/linkedin\.com/i.test(url)) { status.textContent = 'No LinkedIn URL captured — go back and add it, or fill the fields below.'; return; }
+  status.innerHTML = '<span class="spin" style="display:inline-block;width:13px;height:13px;border:2px solid rgba(108,140,255,.25);border-top-color:var(--accent);border-radius:50%;animation:rot 1s linear infinite;vertical-align:-2px"></span> &nbsp;Pulling your public profile…';
+  // capture any typed name first
+  const nameEl = $('pw_name');
+  const nameVal = nameEl ? nameEl.value.trim() : '';
+  if (nameVal) pwDraft.name = nameVal;
+  try {
+    const job = await api('/api/profilecard', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ linkedin_url: url.trim(), name: pwDraft.name || null })
+    });
+    if (job.mode === 'apify' && job.card) {
+      pwDraft.linkedin_card = { ...job.card };
+      applyPullToReview(status, job.card);
+      return;
+    }
+    status.textContent = job.error ? 'Apify failed — the QwenWork agent is reading it instead…' : 'The QwenWork agent is reading your profile…';
+    const poll = setInterval(async () => {
+      try {
+        const j = await api('/api/profilecard/' + job.id);
+        if (j.status === 'done' && j.card) {
+          clearInterval(poll);
+          pwDraft.linkedin_card = { ...j.card };
+          applyPullToReview(status, j.card);
+        } else if (j.status === 'failed') { clearInterval(poll); status.textContent = 'Could not read that profile — fill the fields below, or go back and check the URL.'; }
+      } catch (e) { /* keep polling */ }
+    }, 5000);
+  } catch (e) { status.textContent = 'Pull failed — check the URL and go back, or fill the fields below.'; }
+}
+
+function applyPullToReview(status, card) {
+  status.innerHTML = `<b style="color:var(--ok)">✓ Pulled</b><br>
+    <span style="font-size:12.5px;line-height:1.5;display:block;margin-top:4px">${(card.headline || '').slice(0, 120)}${(card.location && card.location.text) ? ' · ' + card.location.text : ''}</span>
+    <span style="font-size:11.5px;color:var(--muted);display:block;margin-top:4px">Fields below are prefilled — correct anything before finishing.</span>`;
+  if (!pwDraft.name && card.name) { pwDraft.name = card.name; const el = $('pw_name'); if (el) el.value = card.name; }
+  if (card.headline) { const el = $('pw_role'); if (el && !el.value.trim()) el.value = card.headline; pwDraft.role = pwDraft.role || card.headline; }
+  toast('Your LinkedIn profile pulled');
+}
+
+async function pwAdvance() {
+  if (pwStep === 1) {
+    if (pwDraft.method === 'linkedin') {
+      const url = ($('pw_linkedin_url') || {}).value || '';
+      if (!url.trim() || !/linkedin\.com/i.test(url)) { toast('Paste your LinkedIn profile URL — or choose manual'); return; }
+      pwDraft.linkedin_url = url.trim();
+    } else {
+      const n = ($('pw_name') || {}).value || '';
+      if (!n.trim()) { toast('A name is the one thing we need'); return; }
+      pwDraft.name = n.trim();
+      pwDraft.role = (($('pw_role') || {}).value || '').trim();
+    }
+  }
+  if (pwStep === 3) {
+    pwDraft.name = (($('pw_name') || {}).value || '').trim();
+    pwDraft.role = (($('pw_role') || {}).value || '').trim();
+    pwDraft.offer = (($('pw_offer') || {}).value || '').trim();
+    pwDraft.looking = (($('pw_looking') || {}).value || '').trim();
+    if (!pwDraft.name) { toast('A name is the one thing we need'); return; }
+  }
+  pwStep++;
+  if (pwStep <= 3) { renderPw(); return; }
+  // save
+  try {
+    const body = { ...pwDraft };
+    if (!body.photo && body.linkedin_card && body.linkedin_card.photo) body.photo = ''; // photo column empty means fall back to LinkedIn photo at render time
+    PROFILE = await api('/api/profile', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    renderWho();
+    closeProfile();
+    renderBrief(); renderFollowup();
+    toast(`Welcome, ${me()} — the agent now drafts with your context`);
+  } catch (e) { toast('Could not save your profile — try again'); pwStep--; renderPw(); }
+}
+loadProfile();
+
+// ---- voice recording (user-supplied capture, in-app) ----
+let mediaRec = null, recChunks = [], recB64 = null, recTimer = null, recCtx = null;
+let recog = null, recTranscript = '';
+
+function startTranscription(ctx) {
+  recTranscript = '';
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return false;
+  recog = new SR();
+  recog.continuous = true;
+  recog.interimResults = true;
+  recog.lang = 'en-SG';
+  recog.onend = () => {
+    // Chrome auto-stops after a pause — restart while still recording
+    if (mediaRec && mediaRec.state === 'recording') { try { recog.start(); } catch (e) {} }
+  };
+  recog.onresult = e => {
+    let interim = '', final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const r = e.results[i];
+      if (r.isFinal) final += r[0].transcript; else interim += r[0].transcript;
+    }
+    if (final) recTranscript += final;
+    const ui = recUI(ctx);
+    ui.state.textContent = interim
+      ? `✎ transcribing: "${interim.slice(-60)}"`
+      : (recTranscript ? `✓ ${recTranscript.trim().slice(-80)}` : 'transcribing…');
+  };
+  try { recog.start(); } catch (e) { /* already started */ }
+  return true;
+}
+
+function stopTranscription() {
+  if (recog) { try { recog.stop(); } catch (e) {} recog = null; }
+}
+
+// ---- voice recording: one mic button, a saved memo, agent transcription ----
+// (browser speech recognition is attempted free of charge; when unavailable the
+//  audio memo is still stored and the QwenWork agent transcribes it — see screen 4)
+
+function recUI(ctx) {
+  const n = ctx === 'tl' ? 2 : '';
+  return { btn: $('recBtn'+n), state: $('recState'+n), audio: $('recPreview'+n) };
+}
+
+async function toggleRecord(ctx) {
+  if (mediaRec && mediaRec.state === 'recording') { mediaRec.stop(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recCtx = ctx; recChunks = []; recB64 = null;
+    mediaRec = new MediaRecorder(stream);
+    mediaRec.ondataavailable = e => recChunks.push(e.data);
+    mediaRec.onstop = () => {
+      const ui = recUI(recCtx);
+      clearInterval(recTimer);
+      ui.btn.classList.remove('rec'); ui.btn.textContent = '🎙';
+      stream.getTracks().forEach(t => t.stop());
+      stopTranscription();
+      const blob = new Blob(recChunks, { type: 'audio/webm' });
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        recB64 = reader.result;
+        ui.audio.src = recB64; ui.audio.style.display = 'block';
+        if (recTranscript.trim()) {
+          ui.state.textContent = `✓ Transcribed (${Math.round(blob.size/1024)} KB)`;
+          const target = recCtx === 'tl' ? $('fNext') : $('chatInput');
+          target.value = recTranscript.trim();
+          toast('Voice note transcribed — edit the text if needed');
+        } else {
+          ui.state.textContent = `✓ Voice memo saved (${Math.round(blob.size/1024)} KB) — the QwenWork agent can transcribe it after saving`;
+        }
+      };
+      reader.readAsDataURL(blob);
+    };
+    mediaRec.start();
+    const hasSTT = startTranscription(ctx);
+    const ui = recUI(ctx);
+    ui.btn.classList.add('rec'); ui.btn.textContent = '⏹';
+    let secs = 0;
+    ui.state.textContent = '● recording… 0:0' + secs;
+    recTimer = setInterval(() => {
+      secs++;
+      if (ui.state.textContent.startsWith('●')) ui.state.textContent = `● recording… ${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')}`;
+      if (secs >= 60) mediaRec.stop();
+    }, 1000);
+  } catch (e) {
+    toast('Microphone unavailable — check browser permissions');
+  }
+}
+
+// ---- agent drafts: brief + follow-up generated from the actual note ----
+function genBrief(rel) {
+  const note = (rel.note || '').trim();
+  const first = rel.name.split(' ')[0];
+  const sents = note.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 3);
+  const has = re => sents.find(s => re.test(s.toLowerCase()));
+  const need = has(/need|want|looking|planning|hoping|trying|intend|consider|thinking about|goal|expand|second|new/) || sents[0] || note;
+  const promiseS = has(/i (offered|promised|will|i'll|'ll|said i|agreed|mentioned i)|as promised|share my|send|follow up/) ;
+  const promise = promiseS || (note ? 'None detected in this note.' : '');
+  const topic = ((need.match(/(\w+\s)?(second outlet|new (branch|outlet|location|store|product|venture|hire|role)|expand\w*|growth|rebrand\w*|website|brand\w*|marketing|consultan\w*|agency|startup)/i) || [])[0] || '').replace(/^(to|with|for|about|help)\s+/i, '').trim();
+  const oppTopic = topic || 'the plans you discussed';
+  const promiseThing = (promise.match(/my [a-z\s]+|the [a-z\s]+checklist|the [a-z\s]+list|our [a-z\s]+/i) || [])[0];
+  // profile-driven: connect their need to what YOU offer
+  let angle = null;
+  if (PROFILE?.offer && need) {
+    const offerWords = new Set(PROFILE.offer.toLowerCase().match(/[a-z]{4,}/g) || []);
+    const overlap = (need.toLowerCase().match(/[a-z]{4,}/g) || []).some(w => offerWords.has(w) || [...offerWords].some(o => o.startsWith(w.slice(0, 5))));
+    angle = `${overlap ? 'Strong fit' : 'Worth exploring'} — you offer ${PROFILE.offer.trim().toLowerCase()}; ${first}'s ${oppTopic} sits ${overlap ? 'squarely' : 'adjacent'} in that space${PROFILE.looking ? `, and you're looking for ${PROFILE.looking.toLowerCase()}` : ''}.`;
+  }
+  return {
+    who: rel.contact?.role ? `${rel.name} — ${rel.contact.role}` : rel.name,
+    need: need.trim(),
+    promise: promise.trim(),
+    opportunity: `${first} is working on ${oppTopic} — this could become paid work around it, if the conversation continues well. <i>A suggestion, not a confirmed deal.</i>`,
+    angle,
+    next: promiseThing
+      ? `Send ${promiseThing.trim()} within 2 days, then follow up with a short compare-notes message about ${oppTopic}.`
+      : `Follow up within 2 days with something useful about ${oppTopic}.`
+  };
+}
+
+function renderBrief() {
+  if (!REL) { $('convList').innerHTML = '<li>Save a conversation first — the draft is generated from it.</li>'; return; }
+  const b = genBrief(REL);
+  const rows = [
+    ['Who', b.who], ['Stated need', b.need], ['Your promise', b.promise],
+    ['Possible opportunity', b.opportunity]
+  ];
+  if (b.angle) rows.push(['Your angle <span class="tag private" style="vertical-align:1px">FROM YOUR PROFILE</span>', b.angle]);
+  rows.push(['Suggested next step', b.next]);
+  $('convList').innerHTML = rows.map(([k, v]) =>
+    `<li contenteditable="true" style="cursor:text"><b>${k}:</b> <span>${v}</span></li>`).join('');
+}
+
+function genFollowup(rel) {
+  const first = rel.name.split(' ')[0];
+  const b = genBrief(rel);
+  const thing = (b.promise.match(/my [a-z\s]+|the [a-z\s]+checklist|the [a-z\s]+list|our [a-z\s]+/i) || [])[0];
+  const met = (rel.met_context || 'the event').replace(/ — Singapore/, '').replace(/^(on|at)\s+/i, '').replace(/^the\s+/i, 'the ');
+  const topic = (b.need.match(/second outlet|new (branch|outlet|location|store|product|venture)|expand\w*|rebrand\w*|website|brand\w*|marketing/i) || ['your plans'])[0];
+  const sign = PROFILE ? `\n\n— ${PROFILE.name}${PROFILE.role ? ', ' + PROFILE.role : ''}` : '';
+  if (thing) {
+    return `Hi ${first}, lovely meeting you at ${met}. I enjoyed hearing about ${topic}. As promised, here's ${thing.trim()} we spoke about — hope it's useful as you think things through. Happy to compare notes when you've had a chance to look.${sign}`;
+  }
+  return `Hi ${first}, lovely meeting you at ${met}. I enjoyed hearing about ${topic}. Following up on our conversation — happy to share anything useful, or compare notes whenever suits you.${sign}`;
+}
+
+function renderFollowup() {
+  const fu = $('followup');
+  if (!REL) { fu.textContent = ''; return; }
+  if (!fu.textContent.trim()) fu.textContent = genFollowup(REL);
+}
+
+// generated next action, from the same brief draft
+function renderNextAction() {
+  const box = $('nextActionBox');
+  if (!REL || !REL.next_action && !REL.note) { box.style.display = 'none'; return; }
+  const b = genBrief(REL);
+  const first = REL.name.split(' ')[0];
+  const topic = (b.need.match(/second outlet|new (branch|outlet|location|store|product|venture)|expand\w*|rebrand\w*|website|brand\w*|marketing|startup|consultan\w*|train\w*|organi\w*/i) || ['their plans'])[0].toLowerCase();
+  box.style.display = 'block';
+  box.innerHTML = `<b>Next action:</b> ${REL.next_action || `Move on the promise — ${b.next.toLowerCase()}`}
+    <div class="st">Status: open · ${first} · suggested by the agent from your conversation</div>`;
+}
+
+// ---- insight deck: professional PDF intro, generated by the QwenWork agent ----
+let deckJobId = null, deckPoll = null;
+
+async function queueDeck(auto) {
+  if (!REL || !REL.id) { toast('Save the relationship first'); return; }
+  try {
+    // ship the agent everything it needs: conversation, profile card, research, assessment, your profile
+    const context = {
+      note: REL.note,
+      met_context: REL.met_context,
+      contact: REL.contact,
+      profile_card: REL.profile_card,
+      research: REL.research,
+      assessment: REL.assessment,
+      user_profile: PROFILE
+    };
+    const job = await api('/api/deck', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ relationship_id: REL.id, name: REL.name, context })
+    });
+    deckJobId = job.id;
+    REL.deck_job_id = job.id;
+    // persist the link on the relationship so it opens from any session
+    api(`/api/relationships/${REL.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deck_job_id: job.id })
+    }).catch(() => null);
+    renderDeck();
+    if (auto) toast('Worth pursuing — the agent is drafting the insight deck');
+    pollDeck();
+  } catch (e) { toast('Could not queue the insight deck'); }
+}
+
+function pollDeck() {
+  if (deckPoll) clearInterval(deckPoll);
+  deckPoll = setInterval(async () => {
+    if (!deckJobId) { clearInterval(deckPoll); deckPoll = null; return; }
+    try {
+      const j = await api(`/api/deck/${deckJobId}`);
+      if (j.status === 'done' && j.pdf_ready) { clearInterval(deckPoll); deckPoll = null; renderDeck(); }
+      else if (j.status === 'failed') { clearInterval(deckPoll); deckPoll = null; renderDeck(); }
+    } catch (e) { /* keep polling */ }
+  }, 5000);
+}
+
+async function renderDeck() {
+  const state = $('deckState'), actions = $('deckActions');
+  if (!REL) return;
+  let jobId = deckJobId || REL.deck_job_id;
+  let job = null;
+  if (jobId) { try { job = await api(`/api/deck/${jobId}`); } catch (e) {} }
+  const prevFrame = document.getElementById('deckPreview');
+  if (prevFrame) prevFrame.remove();
+  if (!job) {
+    state.innerHTML = 'No insight deck yet.<br><span style="font-size:12.5px;color:var(--muted)">The agent drafts a shareable deck page: why you should connect, potential opportunities, and the value you bring — exportable as a PDF.</span>';
+    actions.innerHTML = '<button class="btn primary" onclick="queueDeck(false)">Generate insight deck with the QwenWork agent</button>';
+    return;
+  }
+  if (job.status === 'queued') {
+    state.innerHTML = '<span class="spin" style="display:inline-block;width:14px;height:14px;border:2px solid rgba(108,140,255,.25);border-top-color:var(--accent);border-radius:50%;animation:rot 1s linear infinite;vertical-align:-2px"></span> &nbsp;The QwenWork agent is drafting the deck...';
+    actions.innerHTML = '';
+    pollDeck();
+    return;
+  }
+  if (job.status === 'failed') {
+    state.textContent = 'The agent could not generate this deck — you can retry.';
+    actions.innerHTML = '<button class="btn primary" onclick="deckJobId=null;queueDeck(false)">Retry generation</button>';
+    return;
+  }
+  state.innerHTML = '<b style="font-size:15px">Insight deck ready</b><br><span style="font-size:12.5px;color:var(--muted)">A professional intro into your relationship with ' + REL.name.split(' ')[0] + ' — why connect, opportunities, and your value.</span>';
+  // recipient response status (refreshed on every render)
+  let accepted = false;
+  try { accepted = (await api('/api/deck/' + jobId)).accepted; } catch (e) {}
+  if (accepted) {
+    state.innerHTML += '<div style="margin-top:10px; display:inline-block; background:rgba(74,222,128,.08); border:1px solid rgba(74,222,128,.35); color:#6ee7a0; border-radius:999px; padding:5px 14px; font-size:12.5px; font-weight:600">✓ Accepted — ' + REL.name.split(' ')[0] + ' welcomed this intro</div>';
+  }
+  const link = location.origin + '/deck/' + jobId;
+  actions.innerHTML =
+    '<button class="btn primary" onclick="copyDeckLink(\'' + link + '\')">Copy share link</button>' +
+    '<a class="btn ghost" href="/deck/' + jobId + '" target="_blank" style="text-decoration:none">Open the deck page</a>' +
+    '<a class="btn ghost" href="/api/deck/' + jobId + '/pdf" target="_blank" style="text-decoration:none">Export as PDF</a>' +
+    '<button class="btn primary" onclick="go(4)">Deck shared — continue</button>';
+  // live preview of the actual shareable page
+  const panel = $('deckPanel');
+  let prev = $('deckPreview');
+  if (!prev) { prev = document.createElement('iframe'); prev.id = 'deckPreview'; panel.after(prev); }
+  prev.src = '/deck/' + jobId;
+  prev.style.cssText = 'width:100%;height:520px;border:1px solid var(--line);border-radius:12px;background:#0b0e14;margin-top:14px;resize:vertical';
+}
+
+function copyDeckLink(link) {
+  navigator.clipboard.writeText(link)
+    .then(() => toast('Deck link copied — opens the PDF only, nothing private'))
+    .catch(() => toast(link));
+}
+
+// deck strip on screen 2: the shareable page link, front and center
+async function renderDeckStrip() {
+  const strip = $('deckStrip');
+  if (!REL) { strip.style.display = 'none'; return; }
+  let deck = null;
+  if (REL.deck_job_id) {
+    try { deck = await api('/api/deck/' + REL.deck_job_id); } catch (e) {}
+  }
+  if (!deck) {
+    // older relationships may have a deck without the id stored on the record — find it by relationship
+    try {
+      const decks = await api('/api/deck?all=1');
+      const mine = (decks || []).filter(d => d.relationship_id === REL.id);
+      if (mine.length) {
+        const done = mine.find(d => d.status === 'done');
+        const chosen = done || mine[0];
+        deck = await api('/api/deck/' + chosen.id);
+      }
+    } catch (e) {}
+  }
+  if (!deck || (deck.status !== 'done' && deck.status !== 'queued')) { strip.style.display = 'none'; return; }
+  strip.style.display = 'block';
+  const link = location.origin + '/deck/' + deck.id;
+  if (deck.status === 'queued') {
+    strip.innerHTML = '<div class="banner" style="background:var(--accent-soft); border-color:rgba(108,140,255,.25); color:var(--accent); display:flex; align-items:center; gap:10px">⚡ Insight deck generating — the QwenWork agent is drafting it. The share link appears here when ready.</div>';
+    return;
+  }
+  strip.innerHTML = `
+    <div style="background:linear-gradient(#11151f,#11151f) padding-box,linear-gradient(135deg,#6c8cff33,#8f6cff33) border-box; border:1px solid transparent; border-radius:12px; padding:14px 18px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:18px">
+      <b style="font-size:14px">Insight deck</b>
+      ${deck.accepted
+        ? '<span class="vtag v-pursue" style="border:1px solid rgba(74,222,128,.5)">✓ accepted by ' + REL.name.split(' ')[0] + '</span>'
+        : '<span class="vtag v-card">sent — awaiting response</span>'}
+      <span style="flex:1"></span>
+      <a href="${link}" target="_blank" style="color:var(--accent); font-size:13px; text-decoration:none; font-weight:600">Open the deck page ↗</a>
+      <button class="btn ghost small" onclick="copyDeckLink('${link}')">Copy link</button>
+      <a href="/api/deck/${deck.id}/pdf" target="_blank" style="color:var(--muted); font-size:12.5px; text-decoration:none">PDF</a>
+    </div>`;
+}
+
+function renderCard() { renderDeck(); }
+
+function renderContact() {
+  const strip = $('contactStrip');
+  const c = REL?.contact || {};
+  const chips = [
+    c.role && ['💼', c.role],
+    c.email && ['✉', c.email, c.email.includes('@') ? 'mailto:'+c.email : null],
+    c.phone && ['☏', c.phone, 'tel:'+c.phone.replace(/\s/g,'')],
+    c.linkedin && ['in', c.linkedin, c.linkedin.startsWith('http') ? c.linkedin : 'https://'+c.linkedin]
+  ].filter(Boolean);
+  strip.innerHTML = chips.map(([icon, label, href]) =>
+    href
+      ? `<a href="${href}" target="_blank" rel="noopener" style="text-decoration:none;color:var(--ink);background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:12.5px">${icon} ${label}</a>`
+      : `<span style="background:var(--bg2);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:12.5px">${icon} ${label}</span>`
+  ).join('');
+}
+
+function renderResearch() {
+  const list = $('researchList');
+  const items = REL?.research || [];
+  if (!items.length) {
+    list.innerHTML = `<li id="researchAsk">No research attached — nothing is auto-researched.<br>
+      <button class="btn ghost small" style="margin-top:8px" onclick="queueResearch()">⚡ Ask the QwenWork agent to research ${REL ? (REL.name.split(' ')[0] || 'them') : 'them'}</button></li>`;
+    return;
+  }
+  list.innerHTML = '';
+  items.forEach(r => {
+    const li = document.createElement('li');
+    const tag = r.status === 'gap flagged'
+      ? '<span class="tag source">gap flagged</span>'
+      : '<span class="tag source">sourced</span>';
+    li.innerHTML = `${r.finding} ${tag}<br>` +
+      (r.url ? `<a href="${r.url}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent)">${r.source} ↗</a>`
+             : `<span style="font-size:12px;color:var(--muted)">${r.source}</span>`);
+    list.appendChild(li);
+  });
+}
+
+// ---- four-step relationship capture ----
+let gStep = 0, gMode = null, gPick = null, gLinkLaunched = false; // gMode: 'manual'|'linkedin'; gPick: 'qr'|'card'|'url'
+const gFields = { name: 'fName', role: 'fRole', link: 'fLinkedin', note: 'fNote', review: 'fName' };
+function gPlan() {
+  if (!gMode) return ['method'];
+  if (gMode === 'manual') return ['name', 'role', 'note'];
+  return ['pick', 'link', 'review', 'note'];
+}
+function gCur() { return gPlan()[gStep] || 'note'; }
+function gSync() { const f = gFields[gCur()]; if (f && gCur() !== 'review') $(f).value = $('chatInput').value; }
+function gSend() { handleAnswer($('chatInput').value.trim()); }
+function gChoose(mode) { gMode = mode; gStep = 0; renderG(); }
+function gChoosePick(pick) { gPick = pick; gStep = 1; renderG(); }
+function handleAnswer(v) {
+  if ($('btnSave').disabled) return;
+  if (mediaRec && mediaRec.state === 'recording') { toast('Stop recording before continuing'); return; }
+  const cur = gCur();
+  if (cur === 'method' || cur === 'pick') return; // choice steps: use the buttons
+  if ((cur === 'name' || cur === 'review') && !v) { toast('A name is required'); $('chatInput').focus(); return; }
+  if (cur === 'link' && v && !/^(https?:\/\/)?(www\.)?linkedin\.com\/in\/[^\s]+$/i.test(v)) {
+    toast('Enter a LinkedIn profile URL or skip this step'); return;
+  }
+  const f = gFields[cur]; if (f) $(f).value = v;
+  if (cur === 'note') { saveConversation(); return; }
+  stopQR();
+  gStep++; renderG();
+}
+function gBack() {
+  if (mediaRec && mediaRec.state === 'recording') { toast('Stop recording before going back'); return; }
+  gSync(); stopQR();
+  if (gCur() === 'pick') gMode = null;      // pick → method choice
+  if (gCur() === 'link') gPick = null;      // link → pick
+  gStep = Math.max(0, gStep - 1); renderG();
+}
+function gSkip() {
+  const cur = gCur();
+  if (cur !== 'role' && cur !== 'link' && cur !== 'note') return;
+  if (cur === 'role') { $('fMet').value = ''; $('gMetInput').value = ''; }
+  handleAnswer('');
+}
+// When a LinkedIn pull/QR/vCard import finishes, move on to the review step.
+function gAfterLink(first, pulled) {
+  if (gCur() === 'link') { gStep = gPlan().indexOf('review'); if (gStep < 0) gStep = 2; renderG(); }
+}
+function renderG() {
+  const plan = gPlan(); const cur = plan[gStep] || 'note';
+  const isChoice = cur === 'method' || cur === 'pick';
+  $('gDots').innerHTML = plan.map((_, i) => `<span class="pdt ${i < gStep ? 'done' : i === gStep ? 'on' : ''}"></span>`).join('');
+  $('gStage').textContent = `Step ${gStep + 1} of ${plan.length}`;
+  const Q = { method: 'How do you want to add them?', pick: 'How should we find their LinkedIn?', name: 'Who did you meet?', role: 'What do they do?', link: 'Their LinkedIn profile', review: 'Does this look right?', note: 'What did you talk about?' };
+  const D = { method: 'Add them by hand, or pull their public details from LinkedIn.', pick: 'Scan their QR code, upload a card photo, or paste the link yourself.', name: 'Start with their name.', role: 'Add their company or role, and where you met if you remember.', link: gPick === 'qr' ? 'Point your camera at the QR code in their LinkedIn app — we pull the profile automatically.' : gPick === 'card' ? 'Upload a business card photo — the agent reads it for you.' : 'Paste their profile link (linkedin.com/in/…).', review: 'We pulled their public profile — check the name and details before saving.', note: 'Add needs, promises, or useful context. You can also record a voice note.' };
+  $('gQuestion').textContent = Q[cur];
+  $('gDescription').textContent = D[cur];
+
+  // choice buttons
+  const choices = $('gChoices');
+  if (cur === 'method') {
+    choices.style.display = 'flex';
+    choices.innerHTML = `
+      <button class="btn primary" style="width:100%" onclick="gChoose('linkedin')">Read their LinkedIn profile</button>
+      <button class="btn ghost" style="width:100%" onclick="gChoose('manual')">Add manually</button>`;
+  } else if (cur === 'pick') {
+    choices.style.display = 'flex';
+    choices.innerHTML = `
+      <button class="btn ghost" style="width:100%" onclick="gChoosePick('qr')">⌗ Scan QR code</button>
+      <button class="btn ghost" style="width:100%" onclick="gChoosePick('card')">📇 Upload photo / business card</button>
+      <button class="btn ghost" style="width:100%" onclick="gChoosePick('url')">🔗 Enter LinkedIn URL</button>`;
+  } else choices.style.display = 'none';
+
+  const f = gFields[cur];
+  $('gInputLabel').style.display = isChoice ? 'none' : 'block';
+  $('chatInput').style.display = isChoice ? 'none' : 'block';
+  if (f) {
+    $('gInputLabel').textContent = { name: 'Full name', role: 'Company / role (optional)', link: 'LinkedIn URL (optional)', note: 'Context notes (optional)', review: 'Their name (edit if wrong)' }[cur] || '';
+    $('chatInput').value = $(f).value;
+    $('chatInput').placeholder = $('gInputLabel').textContent;
+  }
+  $('chatInput').rows = cur === 'note' ? 5 : 1;
+  $('chatInput').style.minHeight = cur === 'note' ? '140px' : '52px';
+  $('gMetWrap').style.display = cur === 'role' ? 'block' : 'none';
+  $('gMetInput').value = $('fMet').value;
+  $('gLinkTools').style.display = (cur === 'link' && (!gPick || gPick === 'url')) ? 'flex' : 'none';
+  $('chatExtras').style.display = (cur === 'link' || cur === 'review') ? 'block' : 'none';
+  $('recBtn').style.display = cur === 'note' ? 'grid' : 'none';
+  $('recState').style.display = cur === 'note' ? '' : 'none';
+  $('recPreview').style.display = cur === 'note' && recB64 ? 'block' : 'none';
+  $('gBack').disabled = gStep === 0 && !gMode;
+  $('gSkip').style.display = (cur === 'role' || cur === 'link' || cur === 'note') ? 'inline-flex' : 'none';
+  $('gContinue').textContent = cur === 'note' ? 'Save and assess' : cur === 'review' ? 'Looks right, continue' : 'Continue';
+  $('gContinue').style.display = isChoice ? 'none' : 'inline-flex';
+  $('chatHint').textContent = cur === 'note' ? 'Enter to save; Shift+Enter for a new line' : 'Enter to continue';
+  // auto-launch the picked capture tool once we land on the link step
+  if (cur === 'link') {
+    if (!gLinkLaunched) { gLinkLaunched = true; if (gPick === 'qr') scanQR(); else if (gPick === 'card') $('cardFile').click(); }
+  } else gLinkLaunched = false;
+  $('chatInput').focus();
+}
+function gReset() {
+  stopQR();
+  [profPoll, ocrPoll, researchPoll].forEach(p => { if (p) clearInterval(p); });
+  profPoll = ocrPoll = researchPoll = null;
+  gStep = 0; gMode = null; gPick = null; gLinkLaunched = false; REL = null; researchState = ''; waitingAssessment = false;
+  ['fName','fRole','fEmail','fPhone','fLinkedin','fNote','fMet'].forEach(id => $(id).value = '');
+  PROFCARD = null; cardDataUrl = null; recB64 = null;
+  $('profileCardBox').style.display = 'none';
+  $('ocrZone').style.display = 'none';
+  $('recState').textContent = '';
+  renderG();
+}
+
+// ---- QR code capture (optional): scan a badge/card QR → LinkedIn or vCard ----
+let qrStream = null, qrLoop = null;
+
+function handleQRPayload(text) {
+  const t = text.trim();
+  stopQR();
+  if (/linkedin\.com\/in\//i.test(t)) {
+    $('fLinkedin').value = t.match(/https?:\/\/[^\s,;"]+/i)?.[0] || t;
+    toast('LinkedIn found in QR — pulling their profile');
+    pullProfile();
+  } else if (/^(BEGIN:VCARD|MECARD:)/i.test(t)) {
+    const get = re => (t.match(re) || [])[1];
+    const name = get(/N[:;]\s*([^;\n]+)/i) || get(/MECARD:N:([^;,]+)/i);
+    if (name && !$('fName').value.trim()) $('fName').value = name.trim();
+    const email = get(/EMAIL[^:]*:(\S+)/i); if (email) $('fEmail').value = email;
+    const tel = get(/TEL[^:]*:(\S+)/i) || get(/MECARD:TEL:([^;,]+)/i); if (tel) $('fPhone').value = tel;
+    const org = get(/ORG[^:]*:(.+)$/i) || get(/MECARD:ORG:([^;,]+)/i); if (org) $('fRole').value = org.trim();
+    const url = get(/URL[^:]*:(\S+)/i); if (url && /linkedin/i.test(url)) $('fLinkedin').value = url;
+    toast('vCard decoded from QR — review the filled fields');
+    gAfterLink(($('fName').value.split(' ')[0] || 'them'), false);
+  } else {
+    toast('QR contains: ' + t.slice(0, 80));
+  }
+}
+
+async function scanQR() {
+  if (!('BarcodeDetector' in window)) { $('qrFile').click(); return; }
+  try {
+    qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const v = $('qrVideo');
+    v.srcObject = qrStream; v.style.display = 'block';
+    $('qrState').textContent = '⌗ scanning — point at the QR code…';
+    const det = new BarcodeDetector();
+    qrLoop = setInterval(async () => {
+      try {
+        const codes = await det.detect(v);
+        if (codes.length) handleQRPayload(codes[0].rawValue);
+      } catch (e) { /* frame not ready */ }
+    }, 600);
+  } catch (e) { $('qrFile').click(); }
+}
+
+function stopQR() {
+  if (qrLoop) { clearInterval(qrLoop); qrLoop = null; }
+  if (qrStream) { qrStream.getTracks().forEach(t => t.stop()); qrStream = null; }
+  $('qrVideo').style.display = 'none';
+  $('qrState').textContent = '';
+}
+
+function qrFromFile(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  $('qrState').textContent = '⌗ reading QR image…';
+  const img = new Image();
+  img.onload = () => {
+    const cv = document.createElement('canvas');
+    cv.width = img.width; cv.height = img.height;
+    cv.getContext('2d').drawImage(img, 0, 0);
+    const data = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js';
+    s.onload = () => {
+      const code = window.jsQR(data.data, data.width, data.height);
+      if (code) handleQRPayload(code.data);
+      else { $('qrState').textContent = 'No QR found in that image — try again or paste the LinkedIn URL'; }
+    };
+    s.onerror = () => { $('qrState').textContent = 'QR library failed to load — paste the LinkedIn URL instead'; };
+    document.head.appendChild(s);
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+
+// ---- LinkedIn profile pull: agent reads their public profile, saved as a reference card ----
+let PROFCARD = null, profJobId = null, profPoll = null;
+
+async function pullProfile() {
+  const url = $('fLinkedin').value.trim();
+  if (!url || !/linkedin\.com/i.test(url)) { toast('Paste their LinkedIn profile URL first'); return; }
+  try {
+    $('profileCardBox').style.display = 'block';
+    $('profileCardSrc').textContent = '⏳ pulling their LinkedIn profile…';
+    $('profileCardContent').textContent = '';
+    const job = await api('/api/profilecard', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ linkedin_url: url, name: $('fName').value.trim() || null })
+    });
+    profJobId = job.id;
+    if (job.mode === 'apify' && job.card) {
+      // Apify scraped it synchronously — instant card, no polling
+      PROFCARD = { ...job.card, source_url: url };
+      applyProfileCard(PROFCARD);
+      $('profileCardSrc').textContent = 'scraped via Apify (harvestapi/linkedin-profile-scraper) — verify before saving';
+      return;
+    }
+    if (job.mode === 'agent-fallback') {
+      $('profileCardSrc').textContent = '⚠ Apify failed — queued for the QwenWork agent instead: ' + (job.error || '');
+    } else {
+      $('profileCardSrc').textContent = '⏳ the QwenWork agent is reading their public LinkedIn profile…';
+    }
+    toast(job.mode === 'agent-fallback' ? 'Apify pull failed — agent fallback queued' : 'Profile pull queued — the agent reads their public page');
+    if (profPoll) clearInterval(profPoll);
+    profPoll = setInterval(async () => {
+      try {
+        const j = await api(`/api/profilecard/${profJobId}`);
+        if (j.status === 'done' && j.card) {
+          clearInterval(profPoll); profPoll = null;
+          PROFCARD = { ...j.card, source_url: j.linkedin_url };
+          applyProfileCard(PROFCARD);
+        } else if (j.status === 'failed') {
+          clearInterval(profPoll); profPoll = null;
+          $('profileCardSrc').textContent = '⚠ the agent could not read that page — fill the fields manually';
+        }
+      } catch (e) { /* keep polling */ }
+    }, 5000);
+  } catch (e) { toast('Could not queue the profile pull'); }
+}
+
+function applyProfileCard(card) {
+  $('profileCardBox').style.display = 'block';
+  const ph = $('profileCardPhoto');
+  if (card.photo) { ph.src = card.photo; ph.style.display = 'block'; }
+  else ph.style.display = 'none';
+  $('profileCardName').textContent = card.name || 'Their profile card';
+  $('profileCardSrc').textContent = 'read from their public LinkedIn — verify before saving';
+  $('profileCardContent').innerHTML = [
+    card.headline && `<b>${card.headline}</b>`,
+    card.location && `<span style="color:var(--muted)">${card.location}</span>`,
+    card.about && `<span>"${String(card.about).slice(0, 220)}${String(card.about).length > 220 ? '…' : ''}"</span>`,
+    card.activity && `<span style="color:var(--muted)">recent: ${card.activity}</span>`
+  ].filter(Boolean).join('<br>');
+  // map into the editable fields — user verifies
+  if (card.name && !$('fName').value.trim()) $('fName').value = card.name;
+  if (card.role && !$('fRole').value.trim()) $('fRole').value = card.role;
+  toast('Profile card ready — fields filled, review & correct');
+  gAfterLink(($('fName').value.split(' ')[0] || 'them'), true);
+}
+
+// ---- assessment: agent's scoring matrix + relatable ground + discovery questions ----
+function renderAssessment() {
+  const box = $('assessBox');
+  const a = REL?.assessment;
+  if (!a) {
+    box.innerHTML = `<div class="banner" style="background:var(--accent-soft); border-color:rgba(108,140,255,.25); color:var(--accent)">
+      <span id="assessmentStatus"></span></div>`;
+    $('assessmentStatus').textContent = researchState || 'No assessment attached. Request research to generate one.';
+    return;
+  }
+  const verdictCls = a.verdict === 'Worth pursuing' ? 'ok' : (a.verdict === 'Reject' ? 'simulated' : 'verified');
+  const dims = (a.matrix || []).map(d => `
+    <tr>
+      <td style="padding:9px 12px; font-size:13.5px; border-bottom:1px dashed var(--line)">${d.dimension}</td>
+      <td style="padding:9px 12px; border-bottom:1px dashed var(--line)"><b style="color:${d.score >= 4 ? 'var(--ok)' : d.score <= 2 ? '#ff7a90' : 'var(--warn)'}">${d.score}/5</b></td>
+      <td style="padding:9px 12px; font-size:12.5px; color:var(--muted); border-bottom:1px dashed var(--line)">${d.rationale}</td>
+    </tr>`).join('');
+  const relate = (a.relate || []).map(r => `<li>${r}</li>`).join('');
+  const questions = (a.discovery_questions || []).map(q => `<li>${q}</li>`).join('');
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <span class="tag ${verdictCls}" style="font-size:12.5px">${(a.verdict || 'ASSESSING').toUpperCase()}</span>
+      <span style="font-size:14px; color:var(--ink)">${a.summary || ''}</span>
+      <span class="tag source">AGENT SCORE — YOU DECIDE</span>
+    </div>
+    ${dims ? `<table style="width:100%; border-collapse:collapse; background:var(--bg2); border:1px solid var(--line); border-radius:12px; margin-bottom:16px">
+      <tr style="color:var(--muted); font-size:11.5px; text-transform:uppercase; letter-spacing:.6px">
+        <td style="padding:9px 12px">Dimension</td><td style="padding:9px 12px">Score</td><td style="padding:9px 12px">Why</td></tr>${dims}</table>` : ''}
+    ${relate ? `<h2 style="font-size:14.5px">What you can relate to</h2><ul class="clean">${relate}</ul>` : ''}
+    ${questions ? `<h2 style="font-size:14.5px; margin-top:14px">Discovery questions to open the conversation</h2><ul class="clean">${questions}</ul>` : ''}
+     ${a.decision ? `<div class="next-action" style="margin-top:16px; display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+       <b>Your decision:</b>
+       <span class="vtag ${a.decision === 'Pursue' ? 'v-pursue' : a.decision === 'Reject' ? 'v-reject' : 'v-consider'}" style="font-size:12.5px">${a.decision === 'Pursue' ? '✓ Pursuing' : a.decision === 'Reject' ? '✕ Rejected' : '? Considering'}</span>
+       <span style="font-size:11.5px;color:var(--muted)">${new Date(a.decided_at || Date.now()).toLocaleDateString()}</span>
+       <button class="btn ghost small" onclick="reopenDecision()">Reopen decision</button>
+      </div>` : ''}`;
+  $('decisionRow').style.display = a.decision ? 'none' : 'flex';
+}
+
+async function reopenDecision() {
+  if (!REL?.assessment?.decision) return;
+  const a = { ...REL.assessment, decision: null, decided_at: null };
+  try {
+    REL = await api(`/api/relationships/${REL.id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assessment: a })
+    });
+    renderAssessment();
+    toast('Decision reopened — the buttons below are active again');
+  } catch (e) { toast('Could not reopen'); }
+}
+
+async function decide(decision) {
+  if (!REL) { toast('Capture a relationship first'); return; }
+  const btn = [...document.querySelectorAll('#decisionRow button')].find(b => b.textContent.includes(decision === 'Pursue' ? 'pursuing' : decision));
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  const a = { ...(REL.assessment || {}), decision, decided_at: new Date().toISOString() };
+  const put = () => api(`/api/relationships/${REL.id}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assessment: a })
+  });
+  try {
+    let lastErr = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try { REL = await put(); lastErr = null; break; }
+      catch (e) {
+        lastErr = e;
+        // deploys restart the backend and kill in-flight requests — wait it out and retry
+        btn.textContent = attempt < 2 ? 'Retrying…' : 'Retrying once more…';
+        await new Promise(r2 => setTimeout(r2, 2500 + attempt * 2500));
+      }
+    }
+    if (lastErr) throw lastErr;
+    renderAssessment();
+    if (decision === 'Reject') {
+      toast(`Rejected — ${REL.name} moved to the bottom of your list, dimmed. Reopen anytime.`);
+      setTimeout(() => { go(0); loadAndShow(); }, 1200);
+    } else if (decision === 'Consider') {
+      toast('Marked for later — stays on your list');
+      setTimeout(() => { go(0); loadAndShow(); }, 900);
+    } else {
+      toast('Pursuing — the agent is drafting the insight deck');
+      deckJobId = null;
+      renderCard();
+      go(3);
+      queueDeck(true);
+    }
+  } catch (e) {
+    toast('Could not record the decision: ' + String(e.message || e).slice(0, 120));
+    if (btn) { btn.disabled = false; btn.textContent = decision === 'Pursue' ? '✓ Worth pursuing →' : decision === 'Consider' ? '? Consider' : '✕ Reject'; }
+  }
+}
+let researchJobId = null, researchPoll = null, researchState = '', waitingAssessment = false;
+function leaveProcessing(screen) {
+  waitingAssessment = false;
+  $('loadScreen').style.display = 'none';
+  renderResearch(); renderAssessment();
+  go(screen);
+  if (screen === 0) loadAndShow();
+}
+function researchStatus(text) {
+  researchState = text;
+  $('loadSub').textContent = text;
+  renderAssessment();
+}
+async function queueResearch(silent) {
+  if (!REL) { if (!silent) toast('Save the relationship first'); return; }
+  try {
+    const job = await api('/api/research', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        relationship_id: REL.id, name: REL.name,
+        context: `${REL.contact?.role || ''} — ${(REL.note || '').slice(0, 300)}`,
+        // give the agent everything: their pulled profile card + your profile, for the assessment
+        profile_card: REL.profile_card || PROFCARD,
+        user_profile: PROFILE
+      })
+    });
+    if (!job.id) throw new Error('Research request returned no job ID');
+    researchJobId = job.id;
+    const jobId = job.id, relationship = REL;
+    researchStatus(`Research request accepted. Reported status: ${job.status || 'pending'}. Waiting for the result and assessment.`);
+    const ask = $('researchAsk');
+    if (ask) ask.innerHTML = '⏳ The QwenWork agent is researching — findings appear here with sources…';
+    if (!silent) toast('Research queued — the agent searches public sources');
+    if (researchPoll) clearInterval(researchPoll);
+    researchPoll = setInterval(async () => {
+      try {
+        const j = await api(`/api/research/${jobId}`);
+        if (REL !== relationship) { clearInterval(researchPoll); researchPoll = null; return; }
+        if (j.status === 'done') {
+          clearInterval(researchPoll); researchPoll = null;
+          if (j.findings) REL.research = j.findings;
+          if (j.assessment) REL.assessment = j.assessment;
+          researchStatus(j.assessment ? 'Research and assessment received.' : 'Research completed, but no assessment was returned. You can review findings or request research again.');
+          renderResearch(); renderAssessment();
+          if (j.assessment && waitingAssessment) leaveProcessing(2);
+        } else if (j.status === 'failed' || j.error) {
+          clearInterval(researchPoll); researchPoll = null;
+          researchStatus('Research failed. The relationship is saved, but no new assessment is available.');
+          $('loadScreen').querySelector('.spinner').style.display = 'none';
+          renderResearch();
+        } else {
+          researchStatus(`Research status: ${j.status || 'unknown'}. No assessment received yet. You can leave this view while waiting.`);
+        }
+      } catch (e) {
+        researchStatus('Could not check research status. The relationship is saved; status checks will retry. You can view the pending assessment or workspace.');
+      }
+    }, 5000);
+  } catch (e) {
+    researchStatus('Could not confirm the research request. The relationship is saved, but research may not be queued.');
+    $('loadScreen').querySelector('.spinner').style.display = 'none';
+  }
+}
+
+function renderTimeline() {
+  const tl = $('timeline');
+  tl.querySelectorAll('[data-saved]').forEach(n => n.remove());
+  (REL?.interactions || []).forEach((it, idx) => {
+    const el = document.createElement('div');
+    el.className = 'bubble ' + (it.author === 'Daniel' ? 'left' : 'right');
+    el.setAttribute('data-saved', '1');
+    let inner = '';
+    if (it.text) inner += it.text;
+    if (it.audio) {
+      inner += `<br><audio controls src="${it.audio}" style="height:32px;margin-top:8px"></audio>`;
+      if (!it.text || /^pending/i.test(it.text)) {
+        inner += `<br><button class="btn ghost small" style="margin-top:8px" onclick="queueTranscription(${idx})">⚡ Transcribe with the QwenWork agent</button>`;
+      }
+    }
+    const byline = it.transcribed_by === 'qwenwork-agent'
+      ? 'transcribed by the QwenWork agent'
+      : 'recorded in-app';
+    el.innerHTML = `${inner}<span class="meta">${it.author} · ${byline} · ${new Date(it.at).toLocaleString()}</span>`;
+    tl.appendChild(el);
+  });
+}
+
+async function queueTranscription(idx) {
+  if (!REL) return;
+  toast('Queued for the QwenWork agent — the transcript will appear here once processed');
+  // optimistic pending state; the agent writes the real transcript back via the API
+  const rows = await api(`/api/relationships/${REL.id}/transcription`, {
+    method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ index: idx, text: 'Pending QwenWork transcription…' })
+  }).catch(() => null);
+  if (rows) { REL = rows; renderTimeline(); }
+}
+
+const $ = id => document.getElementById(id);
+const screens = [0,1,2,3,4];
+
+function go(n) {
+  screens.forEach(i => $('s'+i).classList.toggle('show', i===n));
+  $('rail').style.display = 'flex';
+  document.querySelectorAll('#rail button').forEach(b => {
+    const s = +b.dataset.s;
+    b.classList.toggle('active', s===n);
+    b.classList.toggle('done', s>0 && s<n);
+  });
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+document.querySelectorAll('#rail button').forEach(b => b.onclick = () => go(+b.dataset.s));
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2800);
+}
+
+function startDemo() {
+  go(1);
+  gReset();
+}
+renderG();
+
+// ---- business card OCR (optional capture tool) ----
+function ensureTesseract(cb) {
+  if (window.Tesseract) return cb();
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+  s.onload = cb;
+  s.onerror = () => toast('OCR library failed to load — fill the fields manually');
+  document.head.appendChild(s);
+}
+
+function parseCard(text) {
+  const out = {};
+  const email = text.match(/[\w.+-]+@[\w-]+\.[\w.]+/i);
+  if (email) out.email = email[0];
+  const phone = text.match(/(\+?\d[\d\s\-()]{6,}\d)/);
+  if (phone) out.phone = phone[0].trim();
+  const li = text.match(/((www\.)?(linkedin\.com|lynda\.com)\/[^\s,]+)/i);
+  if (li) out.linkedin = li[1];
+  // name: first non-empty line without digits/@ that isn't a company keyword
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  for (const l of lines) {
+    if (/[@\d]|pte|ltd|llc|inc|company|street|road|blk|singapore|cafe|coffee/i.test(l)) continue;
+    if (l.length >= 3 && l.length <= 40 && /^[A-Za-z .'-]+$/.test(l)) { out.name = l; break; }
+  }
+  // role: line containing a title keyword
+  for (const l of lines) {
+    if (/owner|founder|director|manager|ceo|cto|designer|consultant|head of|manager/i.test(l) && l.length <= 60) { out.role = l; break; }
+  }
+  return out;
+}
+
+let cardDataUrl = null, ocrJobId = null, ocrPoll = null;
+
+async function ocrCard(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const zone = $('ocrZone');
+  zone.style.display = 'block';
+  $('ocrStatus').textContent = 'Reading card…';
+  $('ocrText').textContent = '';
+  const url = URL.createObjectURL(file);
+  $('cardImg').src = url;
+  const reader = new FileReader();
+  reader.onloadend = () => { cardDataUrl = reader.result; $('agentOcrBtn').style.display = 'inline-flex'; };
+  reader.readAsDataURL(file);
+  ensureTesseract(async () => {
+    try {
+      const result = await Tesseract.recognize(url, 'eng', {
+        logger: m => { if (m.status === 'recognizing text') $('ocrStatus').textContent = `Reading card… ${Math.round(m.progress*100)}%`; }
+      });
+      const text = result.data.text.trim();
+      if (text && /[a-z]/i.test(text) && text.split(/\s+/).filter(w => w.length > 3).length >= 3) {
+        $('ocrText').textContent = text;
+        $('ocrStatus').textContent = '✓ Card read locally — review the mapped fields, or use the agent for a hard-to-read card';
+        const parsed = parseCard(text);
+        if (parsed.name && !$('fName').value.trim()) $('fName').value = parsed.name;
+        if (parsed.role) $('fRole').value = parsed.role;
+        if (parsed.email) $('fEmail').value = parsed.email;
+        if (parsed.phone) $('fPhone').value = parsed.phone;
+        if (parsed.linkedin) $('fLinkedin').value = parsed.linkedin;
+        gAfterLink();
+        toast(Object.keys(parsed).length ? 'Fields mapped from card — review & edit' : 'Card read, but no fields recognised — try the agent');
+      } else {
+        $('ocrStatus').textContent = 'Local OCR struggled with this photo — tap ⚡ to have the QwenWork agent read it';
+        $('ocrText').textContent = '(local OCR produced no usable text)';
+      }
+    } catch (e) {
+      $('ocrStatus').textContent = 'Local OCR failed — tap ⚡ to have the QwenWork agent read it';
+    }
+  });
+}
+
+async function agentOcr(auto) {
+  if (!cardDataUrl) { if (!auto) toast('Upload a card image first'); return; }
+  if (ocrPoll) clearInterval(ocrPoll);
+  const btn = $('agentOcrBtn');
+  btn.disabled = true; btn.textContent = auto ? '⏳ QwenWork agent reading the card…' : '⏳ Waiting for the QwenWork agent…';
+  $('ocrStatus').textContent = auto ? $('ocrStatus').textContent : 'Sent to the QwenWork agent — reading the card…';
+  try {
+    const job = await api('/api/ocr', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ image: cardDataUrl })
+    });
+    ocrJobId = job.id;
+    // agent processes every card automatically (scheduled agent); poll until fields arrive
+    ocrPoll = setInterval(async () => {
+      try {
+        const j = await api(`/api/ocr/${ocrJobId}`);
+        if (j.status === 'done' && j.fields) {
+          clearInterval(ocrPoll); ocrPoll = null;
+          btn.disabled = false; btn.textContent = '⚡ Re-read card with the QwenWork agent';
+          const f = j.fields;
+          if (f.name) $('fName').value = f.name;
+          if (f.role) $('fRole').value = f.role;
+          if (f.email) $('fEmail').value = f.email;
+          if (f.phone) $('fPhone').value = f.phone;
+          if (f.linkedin) $('fLinkedin').value = f.linkedin;
+          gAfterLink();
+          $('ocrText').textContent = [f.name, f.role, f.company, f.email, f.phone, f.website, f.linkedin].filter(Boolean).join('\n');
+          $('ocrStatus').textContent = '✓ Card read by the QwenWork agent — review the mapped fields';
+          toast('Fields mapped by the agent — review & edit');
+        }
+      } catch (e) { /* keep polling */ }
+    }, 5000);
+    if (!auto) toast('Card queued — the agent reads it and fills the fields here');
+  } catch (e) {
+    btn.disabled = false; btn.textContent = '⚡ Read card with the QwenWork agent';
+    $('ocrStatus').textContent = 'Could not send the card — try again';
+  }
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+// ---- screen 1 → backend ----
+async function saveConversation() {
+  if (!$('fName').value.trim()) { toast('Who did you meet? — a name is needed'); gStep = gPlan().indexOf('name'); if (gStep < 0) gStep = 0; renderG(); return; }
+  const btn = $('btnSave');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  $('gContinue').disabled = true;
+  waitingAssessment = true;
+  $('loadScreen').style.display = 'block';
+  $('loadScreen').querySelector('.spinner').style.display = 'block';
+  $('loadActions').style.display = 'none';
+  $('loadTitle').textContent = 'Saving relationship';
+  $('loadSub').textContent = 'Waiting for the server to confirm the save.';
+  try {
+    REL = await api('/api/relationships', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        name: $('fName').value,
+        met_context: $('fMet').value,
+        // The existing API requires a nonempty note; mark omitted context explicitly.
+        note: $('fNote').value.trim() || 'No conversation context supplied.',
+        contact: { role: $('fRole').value, email: $('fEmail').value, phone: $('fPhone').value, linkedin: $('fLinkedin').value },
+        profile_card: PROFCARD
+      })
+    });
+    // attach the recorded voice memo from screen 1 to the relationship
+    // (non-fatal: a too-long recording never blocks saving the relationship itself)
+    if (recB64) {
+      try {
+        REL = await api(`/api/relationships/${REL.id}/interaction`, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ author: PROFILE?.name || 'You', text: 'Voice note from the first conversation', audio: recB64 })
+        });
+      } catch (e) {
+        toast('Relationship saved, but the audio attachment could not be confirmed.');
+      }
+      recB64 = null;
+      const ui = recUI(); ui.audio.style.display = 'none'; ui.state.textContent = '';
+    }
+    $('bName').textContent = REL.name;
+    $('cName').textContent = REL.name.split(' ')[0];
+    $('dName').textContent = REL.name.split(' ')[0];
+    $('bSub').textContent = `From conversation · ${REL.met_context}. Check and correct anything before it informs next steps.`;
+    $('loadTitle').textContent = 'Relationship saved';
+    $('loadActions').style.display = 'flex';
+    $('loadSub').textContent = 'Submitting the research request. You can view the pending assessment or return to the workspace.';
+    renderResearch();
+    renderTimeline();
+    renderContact();
+    renderBrief();
+    renderFollowup();
+    renderCard();
+    renderNextAction();
+    renderAssessment();
+    renderDeckStrip();
+    if (REL.assessment) { leaveProcessing(2); }
+    else { await queueResearch(true); }
+  } catch (e) {
+    waitingAssessment = false;
+    $('loadScreen').style.display = 'none';
+    toast('Save could not be confirmed. Check the workspace before retrying to avoid a duplicate.');
+  }
+  btn.disabled = false;
+  $('gContinue').disabled = false;
+}
+
+async function saveBrief() {
+  if (REL) await api(`/api/relationships/${REL.id}/brief`, {
+    method:'PUT', headers:{'Content-Type':'application/json'},
+    // store the brief as the user reviewed/corrected it (lines are contenteditable)
+    body: JSON.stringify({ brief: { lines: [...$('convList').querySelectorAll('li')].map(li => li.textContent.trim()) } })
+  });
+  renderCard();
+  toast('Brief approved');
+  renderResearch();
+  go(3);
+}
+
+function copyCard() { renderDeck(); }
+async function shareLink() { copyDeckLink(location.origin + '/deck/' + (deckJobId || (REL && REL.deck_job_id))); }
+async function deleteCard() { toast('Insight decks live on the deck panel above'); }
+async function saveCard() { go(4); }
+
+async function addInteraction() {
+  const text = $('fNext').value.trim();
+  if (!text && !recB64) { toast('Add a comment or record a voice note first'); return; }
+  if (!REL) { toast('Start a relationship first'); return; }
+  const payload = { author: PROFILE?.name || 'You' };
+  if (text) payload.text = text;
+  if (recB64) { payload.audio = recB64; payload.duration = 0; }
+  REL = await api(`/api/relationships/${REL.id}/interaction`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  $('fNext').value = '';
+  recB64 = null;
+  const ui = recUI('tl'); ui.audio.style.display = 'none'; ui.state.textContent = '';
+  renderTimeline();
+  toast('Recorded in the app — the relationship grows');
+}
+
+// ---- welcome list: relationship cards with live processing states ----
+let relPoll = null;
+async function loadAndShow() {
+  try {
+    const rows = await api('/api/relationships');
+    // which relationships have research still in flight, and which have decks (accepted?) — one map per relationship
+    let pendingIds = new Set();
+    let deckByRel = {};
+    try {
+      const jobs = await api('/api/research');
+      (jobs || []).forEach(j => { if (j.relationship_id && j.status === 'queued') pendingIds.add(j.relationship_id); });
+    } catch (e) { /* research list unavailable — just render without states */ }
+    try {
+      const decks = await api('/api/deck?all=1');
+      (decks || []).forEach(d => { if (d.relationship_id && (!deckByRel[d.relationship_id] || d.accepted)) deckByRel[d.relationship_id] = d; });
+    } catch (e) { /* deck list unavailable */ }
+
+    const wrap = $('recentWrap'), list = $('recentList');
+    list.className = 'rel-grid';
+    list.innerHTML = '';
+    if (!rows.length) {
+      list.className = '';
+      list.innerHTML = '<div class="empty">No relationships yet — start your first one above.</div>';
+    } else {
+      // your decision drives the grid: pursuing first, undecided next, considering, rejected dimmed at the bottom
+      const rank = r => { const d = r.assessment && r.assessment.decision; return d === 'Pursue' ? 0 : !d ? 1 : d === 'Consider' ? 2 : 3; };
+      const sorted = [...rows].sort((a, b) => rank(a) - rank(b));
+      sorted.forEach(r => {
+        const el = document.createElement('div');
+        const proc = pendingIds.has(r.id);
+        const dec = r.assessment && r.assessment.decision;
+        el.className = 'rel-card' + (proc ? ' processing' : '') + (dec === 'Reject' ? ' rejected' : '');
+        const a = r.assessment;
+        const verdict = a && a.verdict === 'Worth pursuing' ? '<span class="vtag v-pursue">✓ Worth pursuing</span>'
+          : a && a.verdict === 'Consider' ? '<span class="vtag v-consider">? Consider</span>'
+          : a && a.verdict === 'Reject' ? '<span class="vtag v-reject">✕ Rejected</span>' : '';
+        const decTag = dec === 'Pursue' ? '<span class="vtag v-pursue" style="border:1px solid rgba(74,222,128,.45)">YOU: pursuing</span>'
+          : dec === 'Consider' ? '<span class="vtag v-consider" style="border:1px solid rgba(255,184,51,.45)">YOU: considering</span>'
+          : dec === 'Reject' ? '<span class="vtag v-reject" style="border:1px solid rgba(255,90,112,.45)">YOU: rejected</span>' : '';
+        const cardTag = r.card ? '<span class="vtag v-card">card shared</span>' : '';
+        const dk = deckByRel[r.id];
+        const deckTag = dk && dk.status === 'done'
+          ? (dk.accepted
+              ? '<span class="vtag v-pursue" style="border:1px solid rgba(74,222,128,.5)">✓ deck accepted</span>'
+              : '<span class="vtag v-card" style="border:1px solid rgba(108,140,255,.4)">deck sent — awaiting response</span>')
+          : dk && dk.status === 'queued' ? '<span class="vtag v-card">deck generating…</span>' : '';
+        const nextTag = r.next_action ? '<span class="vtag v-card">next action open</span>' : '';
+        const photo = (r.profile_card || {}).photo;
+        el.innerHTML = `
+          <div class="del" title="Delete relationship and its card">✕</div>
+          <div class="mark" ${photo ? `style="background-image:url('${photo.replace(/'/g, '%27')}');background-size:cover;background-position:center;border-radius:50%"` : ''}>${photo ? '' : r.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
+          <b>${r.name}</b>
+          <div class="meta">${(r.contact && r.contact.role) || r.met_context || ''}</div>
+          <div class="tags">${decTag}${verdict}${deckTag}${cardTag}${nextTag}</div>
+          ${proc ? '<div class="proc"><span class="spin"></span>agent assessing — research in progress…</div>'
+                 : a ? '' : '<div class="meta" style="font-size:11px">not assessed yet</div>'}
+          ${dk && dk.status === 'done' ? '<a href="/deck/' + dk.id + '" target="_blank" style="margin-top:auto;align-self:flex-start;font-size:12px;color:var(--accent);text-decoration:none;font-weight:600;border:1px solid rgba(108,140,255,.35);background:var(--accent-soft);border-radius:999px;padding:5px 12px">View insight deck ↗</a>' : ''}`;
+        el.onclick = () => {
+          REL = r;
+          $('bName').textContent = r.name;
+          $('cName').textContent = r.name.split(' ')[0];
+          $('dName').textContent = r.name.split(' ')[0];
+          $('bSub').textContent = `From conversation · ${r.met_context || ''}. Check and correct anything before it informs next steps.`;
+          renderResearch(); renderTimeline(); renderContact(); renderBrief(); renderFollowup(); renderCard(); renderNextAction(); renderAssessment(); renderDeckStrip();
+          go(2);
+        };
+        el.querySelector('.del').onclick = async ev => {
+          ev.stopPropagation();
+          if (!confirm(`Delete ${r.name} — relationship record, card and share link?`)) return;
+          await api(`/api/relationships/${r.id}`, { method: 'DELETE' }).catch(() => null);
+          toast('Relationship deleted');
+          loadAndShow();
+        };
+        list.appendChild(el);
+      });
+    }
+    wrap.style.display = 'block';
+    $('recentWrap').scrollIntoView({behavior:'smooth'});
+
+    // while anything is processing, refresh the grid so cards flip to their verdict live
+    if (relPoll) clearInterval(relPoll);
+    if (pendingIds.size) {
+      relPoll = setInterval(async () => {
+        let stillPending = 0;
+        try {
+          const jobs = await api('/api/research');
+          (jobs || []).forEach(j => { if (j.relationship_id && j.status === 'queued') stillPending++; });
+        } catch (e) {}
+        if (stillPending === 0) { clearInterval(relPoll); relPoll = null; loadAndShow(); }
+      }, 10000);
+    }
+  } catch (e) {
+    toast('Could not load relationships');
+  }
+}
+</script>
+</body>
+</html>
